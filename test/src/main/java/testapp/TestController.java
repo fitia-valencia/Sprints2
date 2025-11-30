@@ -4,12 +4,12 @@ import com.monframework.annotation.Route;
 
 public class TestController {
     
-    @Route(url = "/hello")
+    @Route("/hello")
     public String sayHello() {
         return "Bonjour! URL /hello capturée!";
     }
     
-    @Route(url = "/test")
+    @Route("/test")
     public String testMethod() {
         return "Test réussi!";
     }

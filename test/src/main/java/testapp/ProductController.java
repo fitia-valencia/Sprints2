@@ -3,15 +3,15 @@ package testapp;
 import com.monframework.annotation.Controller;
 import com.monframework.annotation.Route;
 
-@Controller(url = "/products")
+@Controller("/products")
 public class ProductController {
     
-    @Route(url = "/list")
+    @Route("/list")
     public String listProducts() {
         return "Liste des produits";
     }
     
-    @Route(url = "/details")
+    @Route("/details")
     public String productDetails() {
         return "Détails du produit";
     }

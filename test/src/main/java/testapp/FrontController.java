@@ -1,7 +1,9 @@
 package testapp;
 
 import com.monframework.scanner.ControllerScanner;
+import com.monframework.scanner.RouteInfo;
 import com.monframework.ModelView;
+import com.monframework.annotation.PathVariable;
 
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletContext;
@@ -12,6 +14,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.Map;
 
 public class FrontController extends HttpServlet {
@@ -68,14 +71,22 @@ public class FrontController extends HttpServlet {
 
         System.out.println(" Requête reçue: " + requestedUrl);
         
-        if (scanner.urlExists(requestedUrl)) {
+        RouteInfo routeInfo = scanner.findMatchingRoute(requestedUrl);
+        
+        if (routeInfo != null) {
             try {
-                Method method = scanner.getMethodForUrl(requestedUrl);
-                Class<?> controllerClass = method.getDeclaringClass();
-                Object controllerInstance = controllerClass.newInstance();                
-                System.out.println(" Exécution: " + controllerClass.getSimpleName() + "." + method.getName());
+                Method method = routeInfo.getMethod();
+                Object controllerInstance = method.getDeclaringClass().newInstance();
                 
-                Object result = method.invoke(controllerInstance);
+                System.out.println("Exécution: " + method.getDeclaringClass().getSimpleName() + "." + method.getName());
+                
+                // Préparer les arguments pour la méthode
+                Object[] args = prepareArguments(routeInfo, requestedUrl);
+                
+                // Exécuter la méthode avec les arguments
+                Object result = method.invoke(controllerInstance, args);
+                
+                // Gérer le retour
                 if (result instanceof ModelView) {
                     handleModelView((ModelView) result, request, response);
                 } else {
@@ -83,17 +94,58 @@ public class FrontController extends HttpServlet {
                 }
                 
             } catch (Exception e) {
-                System.out.println(" ERREUR lors de l'exécution: " + e.getMessage());
+                System.out.println("ERREUR: " + e.getMessage());
                 e.printStackTrace();
-                
-                out.println("<h1> Erreur d'exécution</h1>");
-                out.println("<pre style='color: red;'>" + e.getMessage() + "</pre>");
+                out.println("<h1>Erreur d'exécution</h1><pre>" + e.getMessage() + "</pre>");
             }
         } else {
-            System.out.println(" URL non trouvée: " + requestedUrl);
+            System.out.println("URL non trouvée: " + requestedUrl);
             out.println("<h1>404 - URL non trouvée</h1>");
-            out.println("<p>Aucune méthode trouvée pour: " + requestedUrl + "</p>");
+            out.println("<p>Aucune route trouvée pour: " + requestedUrl + "</p>");
         }
+    }
+    
+    private Object[] prepareArguments(RouteInfo routeInfo, String requestedUrl) {
+        Parameter[] parameters = routeInfo.getParameters();
+        Object[] args = new Object[parameters.length];
+        
+        // Extraire les variables du path
+        Map<String, String> pathVariables = routeInfo.extractPathVariablesValues(requestedUrl);
+        
+        for (int i = 0; i < parameters.length; i++) {
+            Parameter param = parameters[i];
+            
+            // Vérifier si c'est un PathVariable
+            if (param.isAnnotationPresent(PathVariable.class)) {
+                PathVariable pathAnnotation = param.getAnnotation(PathVariable.class);
+                String variableName = pathAnnotation.value();
+                String stringValue = pathVariables.get(variableName);
+                
+                // Convertir la valeur selon le type du paramètre
+                args[i] = convertValue(stringValue, param.getType());
+                System.out.println("    @PathVariable " + variableName + " = " + args[i]);
+            } else {
+                // Pour les autres paramètres (seront gérés dans les sprints suivants)
+                args[i] = null;
+            }
+        }
+        return args;
+    }
+
+    private Object convertValue(String stringValue, Class<?> targetType) {
+        if (stringValue == null) return null;
+        
+        if (targetType == String.class) {
+            return stringValue;
+        } else if (targetType == int.class || targetType == Integer.class) {
+            return Integer.parseInt(stringValue);
+        } else if (targetType == long.class || targetType == Long.class) {
+            return Long.parseLong(stringValue);
+        } else if (targetType == double.class || targetType == Double.class) {
+            return Double.parseDouble(stringValue);
+        }
+        // Ajouter d'autres types au besoin
+        return stringValue;
     }
 
     private void handleModelView(ModelView modelView, HttpServletRequest request, HttpServletResponse response) 

@@ -1,17 +1,22 @@
 package com.monframework.scanner;
 
 import com.monframework.annotation.Controller;
+import com.monframework.annotation.PathVariable;
 import com.monframework.annotation.Route;
 import org.reflections.Reflections;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class ControllerScanner {
     
     private Map<String, Method> routeMap = new HashMap<>();
+    private List<RouteInfo> routes = new ArrayList<>();
     
     public void scanControllers(String packageName) {
         System.out.println(" SCAN DES CONTRÔLEURS DANS LE PACKAGE: " + packageName);
@@ -29,7 +34,7 @@ public class ControllerScanner {
     
     private void displayControllerInfo(Class<?> controllerClass) {
         Controller controllerAnnotation = controllerClass.getAnnotation(Controller.class);
-        String baseUrl = controllerAnnotation.url();
+        String baseUrl = controllerAnnotation.value();
         
         System.out.println("\n CONTRÔLEUR: " + controllerClass.getSimpleName());
         System.out.println("    URL de base: " + baseUrl);
@@ -40,15 +45,17 @@ public class ControllerScanner {
         for (Method method : controllerClass.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Route.class)) {
                 Route routeAnnotation = method.getAnnotation(Route.class);
-                String methodUrl = routeAnnotation.url();
+                String methodUrl = routeAnnotation.value();
                 String fullUrl = baseUrl + methodUrl;
                 
                 // Normaliser l'URL
                 fullUrl = fullUrl.replace("//", "/");
+
+                RouteInfo routeInfo = new RouteInfo(fullUrl, method, method.getParameters());
+                routes.add(routeInfo);
                 
-                routeMap.put(fullUrl, method);
-                System.out.println("       " + method.getName() + "() -> " + fullUrl);
-                hasRoutes = true;
+                System.out.println(" Route enregistrée: " + fullUrl + " -> " + method.getName());
+                displayMethodParameters(method);
             } else {
                 System.out.println("       " + method.getName() + "() -> NON ANNOTÉE");
             }
@@ -57,6 +64,37 @@ public class ControllerScanner {
         if (!hasRoutes) {
             System.out.println("        Aucune méthode annotée @Route trouvée");
         }
+    }
+
+    private void displayMethodParameters(Method method) {
+        Parameter[] parameters = method.getParameters();
+        if (parameters.length > 0) {
+            System.out.println("          Paramètres:");
+            for (Parameter param : parameters) {
+                String paramInfo = "            - " + param.getType().getSimpleName() + " " + param.getName();
+                
+                // Vérifier les annotations de paramètre
+                if (param.isAnnotationPresent(PathVariable.class)) {
+                    PathVariable pathVar = param.getAnnotation(PathVariable.class);
+                    paramInfo += " [@PathVariable '" + pathVar.value() + "']";
+                }
+                
+                System.out.println(paramInfo);
+            }
+        }
+    }
+    
+    public RouteInfo findMatchingRoute(String actualUrl) {
+        for (RouteInfo routeInfo : routes) {
+            if (routeInfo.getPattern().matcher(actualUrl).matches()) {
+                return routeInfo;
+            }
+        }
+        return null;
+    }
+    
+    public List<RouteInfo> getRoutes() {
+        return routes;
     }
 
     public Object executeMethod(String url) throws Exception {

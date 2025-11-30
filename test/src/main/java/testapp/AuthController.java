@@ -3,15 +3,15 @@ package testapp;
 import com.monframework.annotation.Controller;
 import com.monframework.annotation.Route;
 
-@Controller(url="/auth")
+@Controller("/auth")
 public class AuthController {
     
-    @Route(url="/login")
+    @Route("/login")
     public String login() {
         return "Page de connexion";
     }
     
-    @Route(url="/logout")
+    @Route("/logout")
     public String logout() {
         return "Déconnexion";
     }

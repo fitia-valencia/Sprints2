@@ -4,10 +4,10 @@ import com.monframework.annotation.Controller;
 import com.monframework.annotation.Route;
 import com.monframework.ModelView;
 
-@Controller(url="/demo")
+@Controller("/demo")
 public class DemoController {
 
-    @Route(url="/sprint5")
+    @Route("/sprint5")
     public ModelView pageSimple() {
         ModelView mv = new ModelView("sprint5.jsp");
         
