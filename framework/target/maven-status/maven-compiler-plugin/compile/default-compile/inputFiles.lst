@@ -1,6 +1,11 @@
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\Controller.java
+C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\DeleteMapping.java
+C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\GetMapping.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\MyAnnotation.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\PathVariable.java
+C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\PostMapping.java
+C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\PutMapping.java
+C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\RequestMapping.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\RequestParam.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\Route.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\DemoApplication.java

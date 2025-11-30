@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.List;
 import java.util.Map;
 
 public class FrontController extends HttpServlet {
@@ -42,23 +43,20 @@ public class FrontController extends HttpServlet {
         System.out.println("\n LISTE DES ROUTES DISPONIBLES:");
         System.out.println("=================================");
 
-        Map<String, Method> routeMap = scanner.getRouteMap();
+        List<RouteInfo> routes = scanner.getRoutes();
 
-        if (routeMap.isEmpty()) {
+        if (routes.isEmpty()) {
             System.out.println("Aucune route trouvée!");
             return;
         }
 
-        for (Map.Entry<String, Method> entry : routeMap.entrySet()) {
-            String url = entry.getKey();
-            Method method = entry.getValue();
-            String className = method.getDeclaringClass().getSimpleName();
-            String methodName = method.getName();
-
-            System.out.println(" " + url + " -> " + className + "." + methodName + "()");
+        for (RouteInfo route : scanner.getRoutes()) {
+            System.out.println(route.getHttpMethod() + " " + route.getUrlPattern() +
+                    " -> " + route.getMethod().getDeclaringClass().getSimpleName() + "." + route.getMethod().getName()
+                    + "()");
         }
 
-        System.out.println("Total: " + routeMap.size() + " route(s) configurée(s)");
+        System.out.println("Total: " + routes.size() + " route(s) configurée(s)");
         System.out.println("=================================\n");
     }
 
@@ -84,7 +82,7 @@ public class FrontController extends HttpServlet {
             }
         }
 
-        RouteInfo routeInfo = scanner.findMatchingRoute(requestedUrl);
+        RouteInfo routeInfo = scanner.findMatchingRoute(requestedUrl, "GET");
 
         if (routeInfo != null) {
             try {
@@ -121,8 +119,26 @@ public class FrontController extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        System.out.println("Requête POST reçue");
-        doGet(request, response);
+        String actualMethod = getActualHttpMethod(request);
+        if (!"POST".equals(actualMethod)) {
+            processRequest(request, response, actualMethod);
+        } else {
+            processRequest(request, response, "POST");
+        }
+    }
+
+    @Override
+    protected void doPut(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        String actualMethod = getActualHttpMethod(request);
+        processRequest(request, response, actualMethod);
+    }
+
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        String actualMethod = getActualHttpMethod(request);
+        processRequest(request, response, actualMethod);
     }
 
     private Object convertValue(String stringValue, Class<?> targetType) {
@@ -223,36 +239,36 @@ public class FrontController extends HttpServlet {
                 args[i] = convertValue(stringValue, param.getType());
             } else {
                 // SPRINT 6ter: Injection automatique par nom
-            String stringValue = null;
-            
-            // 1. Chercher dans les variables de chemin d'abord
-            if (pathVariables.containsKey(paramName)) {
-                stringValue = pathVariables.get(paramName);
-                System.out.println("     Trouvé dans pathVariables: " + stringValue);
-            } 
-            // 2. Chercher dans les paramètres de requête
-            else if (request.getParameter(paramName) != null) {
-                stringValue = request.getParameter(paramName);
-                System.out.println("     Trouvé dans query parameters: " + stringValue);
-            }
-            // 3. Si pas trouvé, essayer avec le nom de la variable dans l'URL
-            else {
-                stringValue = extractFromUrlPattern(routeInfo.getUrlPattern(), requestedUrl, paramName);
-                if (stringValue != null) {
-                    System.out.println("     Extraite du pattern URL: " + stringValue);
-                } else {
-                    System.out.println("       Paramètre '" + paramName + "' non trouvé");
+                String stringValue = null;
+
+                // 1. Chercher dans les variables de chemin d'abord
+                if (pathVariables.containsKey(paramName)) {
+                    stringValue = pathVariables.get(paramName);
+                    System.out.println("     Trouvé dans pathVariables: " + stringValue);
                 }
+                // 2. Chercher dans les paramètres de requête
+                else if (request.getParameter(paramName) != null) {
+                    stringValue = request.getParameter(paramName);
+                    System.out.println("     Trouvé dans query parameters: " + stringValue);
+                }
+                // 3. Si pas trouvé, essayer avec le nom de la variable dans l'URL
+                else {
+                    stringValue = extractFromUrlPattern(routeInfo.getUrlPattern(), requestedUrl, paramName);
+                    if (stringValue != null) {
+                        System.out.println("     Extraite du pattern URL: " + stringValue);
+                    } else {
+                        System.out.println("       Paramètre '" + paramName + "' non trouvé");
+                    }
+                }
+
+                // Convertir la valeur
+                args[i] = convertValue(stringValue, paramType);
+                System.out.println("     Valeur finale: " + args[i] + " (type: " + paramType.getSimpleName() + ")");
             }
-            
-            // Convertir la valeur
-            args[i] = convertValue(stringValue, paramType);
-            System.out.println("     Valeur finale: " + args[i] + " (type: " + paramType.getSimpleName() + ")");
         }
+
+        return args;
     }
-    
-    return args;
-}
 
     private String extractFromUrlPattern(String urlPattern, String actualUrl, String paramName) {
         // Si le pattern contient {paramName}, extraire la valeur
@@ -353,5 +369,85 @@ public class FrontController extends HttpServlet {
         out.println("</body></html>");
 
         System.out.println("Affichage terminé");
+    }
+
+    private void processRequest(HttpServletRequest request, HttpServletResponse response, String httpMethod)
+            throws ServletException, IOException {
+
+        String requestedUrl = request.getRequestURI().substring(request.getContextPath().length());
+        PrintWriter out = response.getWriter();
+        response.setContentType("text/html; charset=UTF-8");
+
+        // ✅ SANS EMOJIS
+        System.out.println("Requête " + httpMethod + " reçue: " + requestedUrl);
+
+        // Afficher les paramètres
+        Map<String, String[]> params = request.getParameterMap();
+        if (!params.isEmpty()) {
+            System.out.println("Paramètres " + httpMethod + ":");
+            for (Map.Entry<String, String[]> entry : params.entrySet()) {
+                System.out.println("   - " + entry.getKey() + " = " + String.join(", ", entry.getValue()));
+            }
+        }
+
+        // Trouver la route avec la méthode HTTP
+        RouteInfo routeInfo = scanner.findMatchingRoute(requestedUrl, httpMethod);
+
+        if (routeInfo != null) {
+            try {
+                Method method = routeInfo.getMethod();
+                Object controllerInstance = method.getDeclaringClass().newInstance();
+
+                System.out.println("Execution: " + method.getDeclaringClass().getSimpleName() + "." + method.getName());
+
+                // Préparer les arguments
+                Object[] args = prepareArguments(routeInfo, requestedUrl, request);
+
+                // Exécuter la méthode
+                Object result = method.invoke(controllerInstance, args);
+
+                // Gérer le retour
+                if (result instanceof ModelView) {
+                    handleModelView((ModelView) result, request, response);
+                } else {
+                    handleMethodResult(result, out, method);
+                }
+
+            } catch (Exception e) {
+                System.out.println("ERREUR: " + e.getMessage());
+                e.printStackTrace();
+                out.println("<h1>Erreur d'exécution</h1><pre>" + e.getMessage() + "</pre>");
+            }
+        } else {
+            System.out.println("Route non trouvée: " + httpMethod + " " + requestedUrl);
+            out.println("<h1>404 - Route non trouvée</h1>");
+            out.println("<p>Aucune route trouvée pour: " + httpMethod + " " + requestedUrl + "</p>");
+            displayAvailableRoutes(out, httpMethod, requestedUrl);
+        }
+    }
+
+    private void displayAvailableRoutes(PrintWriter out, String requestedMethod, String requestedUrl) {
+        out.println("<h3>Routes disponibles pour " + requestedMethod + ":</h3>");
+        out.println("<ul>");
+        for (RouteInfo route : scanner.getRoutes()) {
+            if (route.getHttpMethod().equalsIgnoreCase(requestedMethod)) {
+                out.println("<li>" + route.getUrlPattern() + "</li>");
+            }
+        }
+        out.println("</ul>");
+    }
+
+    private String getActualHttpMethod(HttpServletRequest request) {
+        String method = request.getMethod();
+
+        // Support pour les méthodes PUT/DELETE via paramètre _method
+        if ("POST".equalsIgnoreCase(method)) {
+            String hiddenMethod = request.getParameter("_method");
+            if (hiddenMethod != null) {
+                return hiddenMethod.toUpperCase();
+            }
+        }
+
+        return method;
     }
 }
