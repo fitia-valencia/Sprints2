@@ -1,7 +1,10 @@
 package testapp;
 
 import com.monframework.scanner.ControllerScanner;
+import com.monframework.ModelView;
 
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -21,6 +24,9 @@ public class FrontController extends HttpServlet {
         
         scanner = new ControllerScanner();
         scanner.scanControllers("testapp");
+
+        // Stocker le scanner dans le contexte servlet
+        getServletContext().setAttribute("routeScanner", scanner);
         
         // Afficher toutes les routes disponibles
         displayAllRoutes();
@@ -70,46 +76,79 @@ public class FrontController extends HttpServlet {
                 System.out.println(" Exécution: " + controllerClass.getSimpleName() + "." + method.getName());
                 
                 Object result = method.invoke(controllerInstance);
-                handleMethodResult(result, out, method);
+                if (result instanceof ModelView) {
+                    handleModelView((ModelView) result, request, response);
+                } else {
+                    handleMethodResult(result, out, method);
+                }
                 
             } catch (Exception e) {
-                response.getWriter().println("<h1>Erreur d'exécution</h1>");
-                response.getWriter().println("<p>" + e.getMessage() + "</p>");
+                System.out.println(" ERREUR lors de l'exécution: " + e.getMessage());
+                e.printStackTrace();
+                
+                out.println("<h1> Erreur d'exécution</h1>");
+                out.println("<pre style='color: red;'>" + e.getMessage() + "</pre>");
             }
         } else {
-            response.getWriter().println("<h1>404 - URL non trouvée</h1>");
-            response.getWriter().println("<p>Aucune méthode trouvée pour: " + requestedUrl + "</p>");
-            response.getWriter().println("<h3>Routes disponibles:</h3>");
-            response.getWriter().println("<ul>");
-            for (String url : scanner.getRouteMap().keySet()) {
-                response.getWriter().println("<li>" + url + "</li>");
-            }
-            response.getWriter().println("</ul>");
+            System.out.println(" URL non trouvée: " + requestedUrl);
+            out.println("<h1>404 - URL non trouvée</h1>");
+            out.println("<p>Aucune méthode trouvée pour: " + requestedUrl + "</p>");
         }
     }
 
+    private void handleModelView(ModelView modelView, HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException {
+        
+        String viewName = modelView.getView();
+        System.out.println("ModelView détecté - Vue: " + viewName);
+        System.out.println("Données: " + modelView.getData());
+        
+        // Ajouter les données à la requête
+        for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
+            request.setAttribute(entry.getKey(), entry.getValue());
+            System.out.println("   -> " + entry.getKey() + " = " + entry.getValue());
+        }
+        
+        // Forward vers la JSP
+        String jspPath = "/WEB-INF/views/" + viewName;
+        System.out.println("Forward vers: " + jspPath);
+        
+        RequestDispatcher dispatcher = request.getRequestDispatcher(jspPath);
+        dispatcher.forward(request, response);
+    }
+    
     private void handleMethodResult(Object result, PrintWriter out, Method method) {
+        System.out.println("Affichage direct du résultat...");
+        
         out.println("<html><head><title>Résultat</title></head><body>");
         out.println("<h1>Méthode exécutée avec succès</h1>");
         out.println("<p><strong>Méthode:</strong> " + method.getDeclaringClass().getSimpleName() + "." + method.getName() + "()</p>");
         
         if (result != null) {
-            out.println("<p><strong>Type de retour:</strong> " + result.getClass().getSimpleName() + "</p>");
+            String resultType = result.getClass().getSimpleName();
+            System.out.println("Type détecté: " + resultType);
+            
+            out.println("<p><strong>Type de retour:</strong> " + resultType + "</p>");
             out.println("<div style='background: #f5f5f5; padding: 15px; border-radius: 5px;'>");
             out.println("<strong>Résultat:</strong><br>");
             
             if (result instanceof String) {
+                System.out.println("C'est une String - Affichage direct");
                 out.println("<pre>" + result + "</pre>");
             } else {
+                System.out.println("Autre type - Utilisation de toString()");
                 out.println("<pre>" + result.toString() + "</pre>");
             }
             
             out.println("</div>");
         } else {
+            System.out.println("La méthode a retourné null");
             out.println("<p><em>La méthode a retourné null</em></p>");
         }
         
-        out.println("<br><a href='/testapp'> Retour à l'accueil</a>");
+        out.println("<br><a href='/testapp'>Retour à l'accueil</a>");
         out.println("</body></html>");
+        
+        System.out.println("Affichage terminé");
     }
 }
