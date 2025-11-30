@@ -1,15 +1,25 @@
 package testapp;
 
-import com.monframework.annotation.Route;
-import com.monframework.scanner.RouteScanner;
+import com.monframework.scanner.ControllerScanner;
 
-import javax.servlet.http.*;
 import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.Set;
 
 public class FrontController extends HttpServlet {
+    
+    private ControllerScanner scanner;
+    
+    @Override
+    public void init() throws ServletException {
+        scanner = new ControllerScanner();
+        scanner.scanControllers("testapp");
+        System.out.println("=== Routes initialisées ===");
+        System.out.println(scanner.getRouteMap());
+    }
     
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) 
@@ -17,30 +27,25 @@ public class FrontController extends HttpServlet {
         
         String requestedUrl = request.getRequestURI().substring(request.getContextPath().length());
         
-        try {
-            // Scanner les méthodes annotées
-            Set<Method> methods = RouteScanner.findAnnotatedMethods("testapp");
-            
-            // Chercher la méthode correspondante à l'URL
-            for (Method method : methods) {
-                Route route = method.getAnnotation(Route.class);
-                if (route.url().equals(requestedUrl)) {
-                    // Exécuter la méthode
-                    Object instance = method.getDeclaringClass().newInstance();
-                    Object result = method.invoke(instance);
-                    
-                    response.getWriter().println("URL trouvée: " + requestedUrl);
-                    response.getWriter().println("Méthode exécutée: " + method.getName());
-                    response.getWriter().println("Résultat: " + result);
-                    return;
-                }
+        response.setContentType("text/html");
+        
+        if (scanner.urlExists(requestedUrl)) {
+            try {
+                Method method = scanner.getMethodForUrl(requestedUrl);
+                Object instance = method.getDeclaringClass().newInstance();
+                Object result = method.invoke(instance);
+                
+                response.getWriter().println("<h1>URL trouvée: " + requestedUrl + "</h1>");
+                response.getWriter().println("<p>Méthode: " + method.getName() + "</p>");
+                response.getWriter().println("<p>Résultat: " + result + "</p>");
+                
+            } catch (Exception e) {
+                response.getWriter().println("<h1>Erreur d'exécution</h1>");
+                response.getWriter().println("<p>" + e.getMessage() + "</p>");
             }
-            
-            // Si aucune méthode trouvée
-            response.getWriter().println("Aucune méthode trouvée pour l'URL: " + requestedUrl);
-            
-        } catch (Exception e) {
-            response.getWriter().println("Erreur: " + e.getMessage());
+        } else {
+            response.getWriter().println("<h1>404 - URL non trouvée</h1>");
+            response.getWriter().println("<p>Aucune méthode trouvée pour: " + requestedUrl + "</p>");
         }
     }
 }
