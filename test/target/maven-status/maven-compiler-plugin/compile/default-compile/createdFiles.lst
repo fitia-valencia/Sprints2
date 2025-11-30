@@ -3,6 +3,7 @@ testapp\AuthController.class
 testapp\TestController3.class
 testapp\FrontController.class
 testapp\DataController.class
+testapp\DemoController.class
 testapp\models\Product.class
 testapp\TestController1.class
 testapp\User.class
