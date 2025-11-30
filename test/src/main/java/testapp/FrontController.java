@@ -125,6 +125,66 @@ public class FrontController extends HttpServlet {
         doGet(request, response);
     }
 
+    private Object convertValue(String stringValue, Class<?> targetType) {
+        // Si la valeur est null, gérer selon le type
+        if (stringValue == null) {
+            if (targetType.isPrimitive()) {
+                // Pour les types primitifs, retourner la valeur par défaut
+                if (targetType == int.class)
+                    return 0;
+                if (targetType == long.class)
+                    return 0L;
+                if (targetType == double.class)
+                    return 0.0;
+                if (targetType == boolean.class)
+                    return false;
+                if (targetType == float.class)
+                    return 0.0f;
+                if (targetType == byte.class)
+                    return (byte) 0;
+                if (targetType == short.class)
+                    return (short) 0;
+                if (targetType == char.class)
+                    return '\0';
+            }
+            return null; // Pour les types objets
+        }
+
+        try {
+            if (targetType == String.class) {
+                return stringValue;
+            } else if (targetType == int.class || targetType == Integer.class) {
+                return Integer.parseInt(stringValue);
+            } else if (targetType == long.class || targetType == Long.class) {
+                return Long.parseLong(stringValue);
+            } else if (targetType == double.class || targetType == Double.class) {
+                return Double.parseDouble(stringValue);
+            } else if (targetType == boolean.class || targetType == Boolean.class) {
+                return Boolean.parseBoolean(stringValue);
+            } else if (targetType == float.class || targetType == Float.class) {
+                return Float.parseFloat(stringValue);
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Erreur conversion: " + stringValue + " vers " + targetType.getSimpleName());
+            // En cas d'erreur, retourner la valeur par défaut pour les primitifs
+            if (targetType.isPrimitive()) {
+                if (targetType == int.class)
+                    return 0;
+                if (targetType == long.class)
+                    return 0L;
+                if (targetType == double.class)
+                    return 0.0;
+                if (targetType == boolean.class)
+                    return false;
+                if (targetType == float.class)
+                    return 0.0f;
+            }
+            return null;
+        }
+
+        return stringValue;
+    }
+
     private Object[] prepareArguments(RouteInfo routeInfo, String requestedUrl, HttpServletRequest request) {
         Parameter[] parameters = routeInfo.getParameters();
         Object[] args = new Object[parameters.length];
@@ -134,6 +194,8 @@ public class FrontController extends HttpServlet {
 
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
+            String paramName = param.getName();
+            Class<?> paramType = param.getType();
 
             if (param.isAnnotationPresent(PathVariable.class)) {
                 PathVariable pathAnnotation = param.getAnnotation(PathVariable.class);
@@ -146,7 +208,6 @@ public class FrontController extends HttpServlet {
             } else if (param.isAnnotationPresent(RequestParam.class)) {
                 // Gestion RequestParam (sprint 6bis)
                 RequestParam requestAnnotation = param.getAnnotation(RequestParam.class);
-                String paramName = requestAnnotation.value();
                 String defaultValue = requestAnnotation.defaultValue();
 
                 String stringValue = request.getParameter(paramName);
@@ -161,33 +222,62 @@ public class FrontController extends HttpServlet {
 
                 args[i] = convertValue(stringValue, param.getType());
             } else {
-                // Parametre sans annotation = null
-                args[i] = null;
+                // SPRINT 6ter: Injection automatique par nom
+            String stringValue = null;
+            
+            // 1. Chercher dans les variables de chemin d'abord
+            if (pathVariables.containsKey(paramName)) {
+                stringValue = pathVariables.get(paramName);
+                System.out.println("     Trouvé dans pathVariables: " + stringValue);
+            } 
+            // 2. Chercher dans les paramètres de requête
+            else if (request.getParameter(paramName) != null) {
+                stringValue = request.getParameter(paramName);
+                System.out.println("     Trouvé dans query parameters: " + stringValue);
             }
+            // 3. Si pas trouvé, essayer avec le nom de la variable dans l'URL
+            else {
+                stringValue = extractFromUrlPattern(routeInfo.getUrlPattern(), requestedUrl, paramName);
+                if (stringValue != null) {
+                    System.out.println("     Extraite du pattern URL: " + stringValue);
+                } else {
+                    System.out.println("       Paramètre '" + paramName + "' non trouvé");
+                }
+            }
+            
+            // Convertir la valeur
+            args[i] = convertValue(stringValue, paramType);
+            System.out.println("     Valeur finale: " + args[i] + " (type: " + paramType.getSimpleName() + ")");
         }
-        return args;
     }
+    
+    return args;
+}
 
-    private Object convertValue(String stringValue, Class<?> targetType) {
-        if (stringValue == null)
-            return null;
-        try {
-            if (targetType == String.class) {
-                return stringValue;
-            } else if (targetType == int.class || targetType == Integer.class) {
-                return Integer.parseInt(stringValue);
-            } else if (targetType == long.class || targetType == Long.class) {
-                return Long.parseLong(stringValue);
-            } else if (targetType == double.class || targetType == Double.class) {
-                return Double.parseDouble(stringValue);
-            } else if (targetType == boolean.class || targetType == Boolean.class) {
-                return Boolean.parseBoolean(stringValue);
+    private String extractFromUrlPattern(String urlPattern, String actualUrl, String paramName) {
+        // Si le pattern contient {paramName}, extraire la valeur
+        if (urlPattern.contains("{" + paramName + "}")) {
+            // Convertir le pattern en regex
+            String regex = urlPattern.replaceAll("\\{" + paramName + "\\}", "([^/]+)");
+            regex = regex.replaceAll("\\{.*?\\}", "[^/]+");
+            regex = "^" + regex + "$";
+
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(regex);
+            java.util.regex.Matcher matcher = pattern.matcher(actualUrl);
+
+            if (matcher.matches()) {
+                // Trouver le groupe qui correspond à notre paramètre
+                String[] patternParts = urlPattern.split("/");
+                String[] actualParts = actualUrl.split("/");
+
+                for (int i = 0; i < patternParts.length && i < actualParts.length; i++) {
+                    if (patternParts[i].equals("{" + paramName + "}")) {
+                        return actualParts[i];
+                    }
+                }
             }
-        } catch (NumberFormatException e) {
-            System.out.println("Erreur conversion: " + stringValue + " vers " + targetType.getSimpleName());
-            return null;
         }
-        return stringValue;
+        return null;
     }
 
     private void handleModelView(ModelView modelView, HttpServletRequest request, HttpServletResponse response)

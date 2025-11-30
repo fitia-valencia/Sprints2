@@ -1,5 +1,6 @@
 testapp\ProductController.class
 testapp\EtudiantController.class
+testapp\TestErrorController.class
 testapp\DataController.class
 testapp\DemoController.class
 testapp\TestController1.class
@@ -12,3 +13,4 @@ testapp\FormController.class
 testapp\FrontController.class
 testapp\models\Product.class
 testapp\User.class
+testapp\AutoParamController.class
