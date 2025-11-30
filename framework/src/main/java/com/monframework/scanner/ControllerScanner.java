@@ -58,6 +58,23 @@ public class ControllerScanner {
             System.out.println("        Aucune méthode annotée @Route trouvée");
         }
     }
+
+    public Object executeMethod(String url) throws Exception {
+        if (!urlExists(url)) {
+            throw new IllegalArgumentException("URL non trouvée: " + url);
+        }
+        
+        Method method = routeMap.get(url);
+        Class<?> controllerClass = method.getDeclaringClass();
+        Object controllerInstance = controllerClass.newInstance();
+        
+        System.out.println(" Exécution de " + controllerClass.getSimpleName() + "." + method.getName());
+        
+        Object result = method.invoke(controllerInstance);
+        
+        System.out.println(" Résultat: " + (result != null ? result.toString() : "null"));
+        return result;
+    }
     
     public Method getMethodForUrl(String url) {
         return routeMap.get(url);
