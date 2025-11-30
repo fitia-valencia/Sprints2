@@ -1,5 +1,10 @@
 com\monframework\scanner\SimpleRouteScanner.class
+com\monframework\annotation\PutMapping.class
+com\monframework\annotation\GetMapping.class
+com\monframework\annotation\PostMapping.class
 com\monframework\annotation\RequestParam.class
+com\monframework\annotation\DeleteMapping.class
+com\monframework\annotation\RequestMapping.class
 com\monframework\annotation\PathVariable.class
 com\monframework\ModelView.class
 com\monframework\MyClass.class

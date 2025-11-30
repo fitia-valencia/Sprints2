@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Méthodes HTTP</title>
+</head>
+<body>
+    <h1>Test des Méthodes HTTP</h1>
+
+    <h2>GET Requests</h2>
+    <ul>
+        <li><a href="api/users/1">GET /api/users/1</a></li>
+        <li><a href="api/users">GET /api/users</a></li>
+        <li><a href="api/products/123">GET /api/products/123 (RequestMapping)</a></li>
+    </ul>
+
+    <h2>📨 POST Request - Créer utilisateur</h2>
+    <form action="api/users" method="post">
+        <input type="text" name="name" placeholder="Nom" value="John Doe" required>
+        <input type="email" name="email" placeholder="Email" value="john@test.com" required>
+        <input type="number" name="age" placeholder="Âge" value="28" required>
+        <button type="submit">Créer (POST)</button>
+    </form>
+
+    <h2>PUT Request - Mettre à jour</h2>
+    <form action="api/users/1" method="post">
+        <input type="hidden" name="_method" value="PUT">
+        <input type="text" name="name" placeholder="Nom" value="John Updated" required>
+        <input type="email" name="email" placeholder="Email" value="john.updated@test.com" required>
+        <button type="submit">Mettre à jour (PUT)</button>
+    </form>
+
+    <h2>DELETE Request - Supprimer</h2>
+    <form action="api/users/1" method="post">
+        <input type="hidden" name="_method" value="DELETE">
+        <button type="submit">Supprimer utilisateur 1 (DELETE)</button>
+    </form>
+
+    <h2>URLs de test directes:</h2>
+    <ul>
+        <li>GET: <a href="api/users/1">/api/users/1</a></li>
+        <li>GET: <a href="api/users">/api/users</a></li>
+    </ul>
+
+    <p><a href="/testapp">Retour à l'accueil</a></p>
+
+    <script>
+        // Support pour les méthodes PUT/DELETE via hidden _method
+        document.addEventListener('DOMContentLoaded', function() {
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    const method = this.querySelector('input[name="_method"]');
+                    if (method) {
+                        this.method = 'post'; // Tomcat ne supporte pas PUT/DELETE directement
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,7 +1,12 @@
 package com.monframework.scanner;
 
 import com.monframework.annotation.Controller;
+import com.monframework.annotation.DeleteMapping;
+import com.monframework.annotation.GetMapping;
 import com.monframework.annotation.PathVariable;
+import com.monframework.annotation.PostMapping;
+import com.monframework.annotation.PutMapping;
+import com.monframework.annotation.RequestMapping;
 import com.monframework.annotation.RequestParam;
 import com.monframework.annotation.Route;
 import org.reflections.Reflections;
@@ -29,41 +34,63 @@ public class ControllerScanner {
         System.out.println(" Contrôleurs trouvés: " + controllers.size());
 
         for (Class<?> controllerClass : controllers) {
-            displayControllerInfo(controllerClass);
+            scanController(controllerClass);
         }
     }
 
-    private void displayControllerInfo(Class<?> controllerClass) {
+    private void scanController(Class<?> controllerClass) {
         Controller controllerAnnotation = controllerClass.getAnnotation(Controller.class);
         String baseUrl = controllerAnnotation.value();
 
         System.out.println("\n CONTRÔLEUR: " + controllerClass.getSimpleName());
         System.out.println("    URL de base: " + baseUrl);
-        System.out.println("    Méthodes:");
+        System.out.println("    Méthodes HTTP:");
 
-        // Scanner les méthodes annotées @Route
-        boolean hasRoutes = false;
         for (Method method : controllerClass.getDeclaredMethods()) {
-            if (method.isAnnotationPresent(Route.class)) {
-                Route routeAnnotation = method.getAnnotation(Route.class);
-                String methodUrl = routeAnnotation.value();
-                String fullUrl = baseUrl + methodUrl;
+            scanMethodForHttpAnnotations(method, baseUrl);
+        }
+    }
 
-                // Normaliser l'URL
-                fullUrl = fullUrl.replace("//", "/");
+    private void scanMethodForHttpAnnotations(Method method, String baseUrl) {
+        String httpMethod = null;
+        String methodUrl = null;
 
-                RouteInfo routeInfo = new RouteInfo(fullUrl, method, method.getParameters());
-                routes.add(routeInfo);
-
-                System.out.println(" Route enregistrée: " + fullUrl + " -> " + method.getName());
-                displayMethodParameters(method);
-            } else {
-                System.out.println("       " + method.getName() + "() -> NON ANNOTÉE");
-            }
+        // Vérifier les annotations HTTP spécifiques
+        if (method.isAnnotationPresent(GetMapping.class)) {
+            GetMapping annotation = method.getAnnotation(GetMapping.class);
+            methodUrl = annotation.value();
+            httpMethod = "GET";
+        } else if (method.isAnnotationPresent(PostMapping.class)) {
+            PostMapping annotation = method.getAnnotation(PostMapping.class);
+            methodUrl = annotation.value();
+            httpMethod = "POST";
+        } else if (method.isAnnotationPresent(PutMapping.class)) {
+            PutMapping annotation = method.getAnnotation(PutMapping.class);
+            methodUrl = annotation.value();
+            httpMethod = "PUT";
+        } else if (method.isAnnotationPresent(DeleteMapping.class)) {
+            DeleteMapping annotation = method.getAnnotation(DeleteMapping.class);
+            methodUrl = annotation.value();
+            httpMethod = "DELETE";
+        } else if (method.isAnnotationPresent(RequestMapping.class)) {
+            RequestMapping annotation = method.getAnnotation(RequestMapping.class);
+            methodUrl = annotation.value();
+            httpMethod = annotation.method();
+        } else if (method.isAnnotationPresent(Route.class)) {
+            Route annotation = method.getAnnotation(Route.class);
+            methodUrl = annotation.value();
+            httpMethod = "GET"; // Par défaut
         }
 
-        if (!hasRoutes) {
-            System.out.println("        Aucune méthode annotée @Route trouvée");
+        if (httpMethod != null && methodUrl != null) {
+            String fullUrl = baseUrl + methodUrl;
+            fullUrl = fullUrl.replace("//", "/");
+
+            RouteInfo routeInfo = new RouteInfo(fullUrl, method, method.getParameters(), httpMethod);
+            routes.add(routeInfo);
+
+            System.out.println("      " + httpMethod + " " + fullUrl + " -> " + method.getName());
+            displayMethodParameters(method);
         }
     }
 
@@ -91,7 +118,17 @@ public class ControllerScanner {
         }
     }
 
-    public RouteInfo findMatchingRoute(String actualUrl) {
+    public RouteInfo findMatchingRoute(String actualUrl, String httpMethod) {
+        for (RouteInfo routeInfo : routes) {
+            if (routeInfo.getPattern().matcher(actualUrl).matches() && 
+                routeInfo.getHttpMethod().equalsIgnoreCase(httpMethod)) {
+                return routeInfo;
+            }
+        }
+        return null;
+    }
+
+    public RouteInfo findAnyMatchingRoute(String actualUrl) {
         for (RouteInfo routeInfo : routes) {
             if (routeInfo.getPattern().matcher(actualUrl).matches()) {
                 return routeInfo;
@@ -105,19 +142,20 @@ public class ControllerScanner {
     }
 
     public Object executeMethod(String url) throws Exception {
-        if (!urlExists(url)) {
-            throw new IllegalArgumentException("URL non trouvée: " + url);
+        RouteInfo routeInfo = findAnyMatchingRoute(url);
+        if (routeInfo == null) {
+            throw new IllegalArgumentException("URL non trouvee: " + url);
         }
 
-        Method method = routeMap.get(url);
+        Method method = routeInfo.getMethod();
         Class<?> controllerClass = method.getDeclaringClass();
         Object controllerInstance = controllerClass.newInstance();
 
-        System.out.println(" Exécution de " + controllerClass.getSimpleName() + "." + method.getName());
+        System.out.println("Execution de " + controllerClass.getSimpleName() + "." + method.getName());
 
         Object result = method.invoke(controllerInstance);
 
-        System.out.println(" Résultat: " + (result != null ? result.toString() : "null"));
+        System.out.println("Resultat: " + (result != null ? result.toString() : "null"));
         return result;
     }
 
@@ -126,7 +164,7 @@ public class ControllerScanner {
     }
 
     public boolean urlExists(String url) {
-        return routeMap.containsKey(url);
+        return findAnyMatchingRoute(url) != null;
     }
 
     public Map<String, Method> getRouteMap() {

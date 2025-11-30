@@ -8,17 +8,25 @@ import java.util.regex.Pattern;
 
 import com.monframework.annotation.RequestParam;
 
+// import com.monframework.annotation.RequestParam;
+
 public class RouteInfo {
     private String urlPattern; // "etudiant/{id}"
     private Method method;
     private List<String> pathVariables; // ["id"]
     private Parameter[] parameters;
+    private String httpMethod; // GET, POST, PUT, DELETE
 
-    public RouteInfo(String urlPattern, Method method, Parameter[] parameters) {
+    public String getHttpMethod() {
+        return httpMethod;
+    }
+
+    public RouteInfo(String urlPattern, Method method, Parameter[] parameters, String httpMethod) {
         this.urlPattern = urlPattern;
         this.method = method;
         this.parameters = parameters;
         this.pathVariables = extractPathVariables(urlPattern);
+        this.httpMethod = httpMethod;
     }
 
     private List<String> extractPathVariables(String urlPattern) {
