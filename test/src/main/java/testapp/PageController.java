@@ -7,10 +7,10 @@ import testapp.models.Product;
 
 import com.monframework.ModelView;
 
-@Controller(url="/pages")
+@Controller("/pages")
 public class PageController {
     
-    @Route(url="/home")
+    @Route("/home")
     public ModelView homePage() {
         ModelView mv = new ModelView("home.jsp");
         mv.addObject("title", "Page d'accueil");
@@ -19,7 +19,7 @@ public class PageController {
         return mv;
     }
     
-    @Route(url="/profile")
+    @Route("/profile")
     public ModelView userProfile() {
         ModelView mv = new ModelView("profile.jsp");
         mv.addObject("name", "John Doe");
@@ -28,7 +28,7 @@ public class PageController {
         return mv;
     }
     
-    @Route(url="/products")
+    @Route("/products")
     public ModelView productList() {
         ModelView mv = new ModelView("products.jsp");
         mv.addObject("products", java.util.List.of(

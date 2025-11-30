@@ -8,5 +8,5 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Controller {
-    String url() default "";  // URL de base pour le contrôleur
+    String value() default "";  // URL de base pour le contrôleur
 }
