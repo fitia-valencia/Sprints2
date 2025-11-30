@@ -7,6 +7,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.util.Map;
 
@@ -56,18 +57,20 @@ public class FrontController extends HttpServlet {
             throws ServletException, IOException {
         
         String requestedUrl = request.getRequestURI().substring(request.getContextPath().length());
-        
+        PrintWriter out = response.getWriter();
         response.setContentType("text/html");
+
+        System.out.println(" Requête reçue: " + requestedUrl);
         
         if (scanner.urlExists(requestedUrl)) {
             try {
                 Method method = scanner.getMethodForUrl(requestedUrl);
-                Object instance = method.getDeclaringClass().newInstance();
-                Object result = method.invoke(instance);
+                Class<?> controllerClass = method.getDeclaringClass();
+                Object controllerInstance = controllerClass.newInstance();                
+                System.out.println(" Exécution: " + controllerClass.getSimpleName() + "." + method.getName());
                 
-                response.getWriter().println("<h1>URL trouvée: " + requestedUrl + "</h1>");
-                response.getWriter().println("<p>Méthode: " + method.getName() + "</p>");
-                response.getWriter().println("<p>Résultat: " + result + "</p>");
+                Object result = method.invoke(controllerInstance);
+                handleMethodResult(result, out, method);
                 
             } catch (Exception e) {
                 response.getWriter().println("<h1>Erreur d'exécution</h1>");
@@ -83,5 +86,30 @@ public class FrontController extends HttpServlet {
             }
             response.getWriter().println("</ul>");
         }
+    }
+
+    private void handleMethodResult(Object result, PrintWriter out, Method method) {
+        out.println("<html><head><title>Résultat</title></head><body>");
+        out.println("<h1>Méthode exécutée avec succès</h1>");
+        out.println("<p><strong>Méthode:</strong> " + method.getDeclaringClass().getSimpleName() + "." + method.getName() + "()</p>");
+        
+        if (result != null) {
+            out.println("<p><strong>Type de retour:</strong> " + result.getClass().getSimpleName() + "</p>");
+            out.println("<div style='background: #f5f5f5; padding: 15px; border-radius: 5px;'>");
+            out.println("<strong>Résultat:</strong><br>");
+            
+            if (result instanceof String) {
+                out.println("<pre>" + result + "</pre>");
+            } else {
+                out.println("<pre>" + result.toString() + "</pre>");
+            }
+            
+            out.println("</div>");
+        } else {
+            out.println("<p><em>La méthode a retourné null</em></p>");
+        }
+        
+        out.println("<br><a href='/testapp'> Retour à l'accueil</a>");
+        out.println("</body></html>");
     }
 }

@@ -2,6 +2,8 @@ testapp\ProductController.class
 testapp\AuthController.class
 testapp\TestController3.class
 testapp\FrontController.class
+testapp\DataController.class
 testapp\TestController1.class
+testapp\User.class
 testapp\TestController.class
 testapp\TestController2.class
