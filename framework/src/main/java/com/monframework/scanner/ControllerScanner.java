@@ -14,32 +14,48 @@ public class ControllerScanner {
     private Map<String, Method> routeMap = new HashMap<>();
     
     public void scanControllers(String packageName) {
+        System.out.println(" SCAN DES CONTRÔLEURS DANS LE PACKAGE: " + packageName);
+        
         Reflections reflections = new Reflections(packageName);
         
         // Trouver toutes les classes annotées @Controller
         Set<Class<?>> controllers = reflections.getTypesAnnotatedWith(Controller.class);
-        System.out.println("Contrôleurs trouvés: " + controllers.size());
+        System.out.println(" Contrôleurs trouvés: " + controllers.size());
         
         for (Class<?> controllerClass : controllers) {
-            Controller controllerAnnotation = controllerClass.getAnnotation(Controller.class);
-            String baseUrl = controllerAnnotation.url();
-            
-            System.out.println("Scan du contrôleur: " + controllerClass.getName() + " - baseUrl: " + baseUrl);
-            
-            // Scanner les méthodes annotées @Route
-            for (Method method : controllerClass.getDeclaredMethods()) {
-                if (method.isAnnotationPresent(Route.class)) {
-                    Route routeAnnotation = method.getAnnotation(Route.class);
-                    String methodUrl = routeAnnotation.url();
-                    String fullUrl = baseUrl + methodUrl;
-                    
-                    // Normaliser l'URL (enlever les doubles slash)
-                    fullUrl = fullUrl.replace("//", "/");
-                    
-                    routeMap.put(fullUrl, method);
-                    System.out.println("Route mappée: " + fullUrl + " -> " + method.getName());
-                }
+            displayControllerInfo(controllerClass);
+        }
+    }
+    
+    private void displayControllerInfo(Class<?> controllerClass) {
+        Controller controllerAnnotation = controllerClass.getAnnotation(Controller.class);
+        String baseUrl = controllerAnnotation.url();
+        
+        System.out.println("\n CONTRÔLEUR: " + controllerClass.getSimpleName());
+        System.out.println("    URL de base: " + baseUrl);
+        System.out.println("    Méthodes:");
+        
+        // Scanner les méthodes annotées @Route
+        boolean hasRoutes = false;
+        for (Method method : controllerClass.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(Route.class)) {
+                Route routeAnnotation = method.getAnnotation(Route.class);
+                String methodUrl = routeAnnotation.url();
+                String fullUrl = baseUrl + methodUrl;
+                
+                // Normaliser l'URL
+                fullUrl = fullUrl.replace("//", "/");
+                
+                routeMap.put(fullUrl, method);
+                System.out.println("       " + method.getName() + "() -> " + fullUrl);
+                hasRoutes = true;
+            } else {
+                System.out.println("       " + method.getName() + "() -> NON ANNOTÉE");
             }
+        }
+        
+        if (!hasRoutes) {
+            System.out.println("        Aucune méthode annotée @Route trouvée");
         }
     }
     

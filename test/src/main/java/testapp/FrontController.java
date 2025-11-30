@@ -8,6 +8,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.Map;
 
 public class FrontController extends HttpServlet {
     
@@ -15,10 +16,39 @@ public class FrontController extends HttpServlet {
     
     @Override
     public void init() throws ServletException {
+        System.out.println("=== INITIALISATION DE L'APPLICATION ===");
+        
         scanner = new ControllerScanner();
         scanner.scanControllers("testapp");
-        System.out.println("=== Routes initialisées ===");
-        System.out.println(scanner.getRouteMap());
+        
+        // Afficher toutes les routes disponibles
+        displayAllRoutes();
+        
+        System.out.println("=== INITIALISATION TERMINÉE ===");
+    }
+    
+    private void displayAllRoutes() {
+        System.out.println("\n LISTE DES ROUTES DISPONIBLES:");
+        System.out.println("=================================");
+        
+        Map<String, Method> routeMap = scanner.getRouteMap();
+        
+        if (routeMap.isEmpty()) {
+            System.out.println("Aucune route trouvée!");
+            return;
+        }
+        
+        for (Map.Entry<String, Method> entry : routeMap.entrySet()) {
+            String url = entry.getKey();
+            Method method = entry.getValue();
+            String className = method.getDeclaringClass().getSimpleName();
+            String methodName = method.getName();
+            
+            System.out.println(" " + url + " -> " + className + "." + methodName + "()");
+        }
+        
+        System.out.println("Total: " + routeMap.size() + " route(s) configurée(s)");
+        System.out.println("=================================\n");
     }
     
     @Override
@@ -46,6 +76,12 @@ public class FrontController extends HttpServlet {
         } else {
             response.getWriter().println("<h1>404 - URL non trouvée</h1>");
             response.getWriter().println("<p>Aucune méthode trouvée pour: " + requestedUrl + "</p>");
+            response.getWriter().println("<h3>Routes disponibles:</h3>");
+            response.getWriter().println("<ul>");
+            for (String url : scanner.getRouteMap().keySet()) {
+                response.getWriter().println("<li>" + url + "</li>");
+            }
+            response.getWriter().println("</ul>");
         }
     }
 }
