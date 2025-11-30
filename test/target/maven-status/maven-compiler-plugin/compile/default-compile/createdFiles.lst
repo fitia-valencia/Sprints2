@@ -8,6 +8,7 @@ testapp\TestController.class
 testapp\TestController2.class
 testapp\AuthController.class
 testapp\TestController3.class
+testapp\FormController.class
 testapp\FrontController.class
 testapp\models\Product.class
 testapp\User.class

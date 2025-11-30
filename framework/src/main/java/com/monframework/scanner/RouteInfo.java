@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import com.monframework.annotation.RequestParam;
+
 public class RouteInfo {
     private String urlPattern; // "etudiant/{id}"
     private Method method;
@@ -50,6 +52,20 @@ public class RouteInfo {
             }
         }
         return values;
+    }
+
+    public boolean isRequestParam(Parameter param) {
+        return param.isAnnotationPresent(RequestParam.class);
+    }
+
+    public String getRequestParamName(Parameter param) {
+        RequestParam annotation = param.getAnnotation(RequestParam.class);
+        return annotation != null ? annotation.value() : null;
+    }
+
+    public String getRequestParamDefaultValue(Parameter param) {
+        RequestParam annotation = param.getAnnotation(RequestParam.class);
+        return annotation != null ? annotation.defaultValue() : null;
     }
 
     public String getUrlPattern() { return urlPattern; }
