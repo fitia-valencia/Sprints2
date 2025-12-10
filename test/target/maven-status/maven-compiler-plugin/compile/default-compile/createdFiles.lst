@@ -3,6 +3,7 @@ testapp\EtudiantController.class
 testapp\TestErrorController.class
 testapp\DataController.class
 testapp\DemoController.class
+testapp\Sprint8Controller.class
 testapp\PageController.class
 testapp\models\User.class
 testapp\FormController.class

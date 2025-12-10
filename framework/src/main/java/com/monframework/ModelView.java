@@ -12,7 +12,6 @@ public class ModelView {
         this.data = new HashMap<>();
     }
     
-    // Getters et Setters
     public String getView() {
         return view;
     }
@@ -35,5 +34,9 @@ public class ModelView {
     
     public Object getObject(String key) {
         return this.data.get(key);
+    }
+
+    public void addAllObjects(Map<String, Object> data) {
+        this.data.putAll(data);
     }
 }
