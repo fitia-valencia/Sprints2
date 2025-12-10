@@ -10,4 +10,5 @@ import java.lang.annotation.Target;
 public @interface RequestParam {
     String value(); // Nom du paramètre dans l'URL
     String defaultValue() default ""; // Valeur par défaut
+    boolean required() default true;
 }

@@ -16,6 +16,8 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,6 +39,48 @@ public class FrontController extends HttpServlet {
         displayAllRoutes();
 
         System.out.println("=== INITIALISATION TERMINÉE ===");
+    }
+
+    // Ajoutez cette méthode dans FrontController.java
+    private Map<String, Object> buildDataMap(HttpServletRequest request, Map<String, String> pathVariables) {
+        Map<String, Object> dataMap = new HashMap<>();
+
+        // Récupérer tous les paramètres de la requête
+        Map<String, String[]> requestParams = request.getParameterMap();
+
+        // Ajouter les paramètres de requête
+        for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
+            String[] values = entry.getValue();
+            if (values == null || values.length == 0) {
+                continue;
+            }
+
+            if (values.length == 1) {
+                // Cas d'une seule valeur
+                dataMap.put(entry.getKey(), values[0]);
+            } else {
+                // Cas multiple (checkbox, select multiple)
+                dataMap.put(entry.getKey(), values);
+            }
+        }
+
+        // Ajouter les variables de chemin
+        if (pathVariables != null) {
+            dataMap.putAll(pathVariables);
+        }
+
+        // Gestion spéciale pour les checkbox non cochées
+        // (Optionnel: ajouter explicitement les checkbox manquantes avec false)
+        Enumeration<String> paramNames = request.getParameterNames();
+        while (paramNames.hasMoreElements()) {
+            String paramName = paramNames.nextElement();
+            if (!dataMap.containsKey(paramName)) {
+                dataMap.put(paramName, null);
+            }
+        }
+
+        System.out.println("Map créée avec " + dataMap.size() + " entrées");
+        return dataMap;
     }
 
     private void displayAllRoutes() {
@@ -213,14 +257,26 @@ public class FrontController extends HttpServlet {
             String paramName = param.getName();
             Class<?> paramType = param.getType();
 
+            System.out.println(
+                    "Traitement paramètre " + i + ": " + paramName + " (type: " + paramType.getSimpleName() + ")");
+
+            // SPRINT 8: Vérifier si c'est un Map<String, Object> ou Map
+            if (Map.class.isAssignableFrom(paramType)) {
+                System.out.println("  -> Détection Map: injection de toutes les données");
+                args[i] = buildDataMap(request, pathVariables);
+                System.out.println("  -> Map injectée avec " + ((Map<?, ?>) args[i]).size() + " entrées");
+                continue;
+            }
+
+            // Continuer avec le traitement existant pour les autres types
             if (param.isAnnotationPresent(PathVariable.class)) {
                 PathVariable pathAnnotation = param.getAnnotation(PathVariable.class);
                 String variableName = pathAnnotation.value();
                 String stringValue = pathVariables.get(variableName);
 
-                // Convertir la valeur selon le type du paramètre
                 args[i] = convertValue(stringValue, param.getType());
                 System.out.println("    @PathVariable " + variableName + " = " + args[i]);
+
             } else if (param.isAnnotationPresent(RequestParam.class)) {
                 // Gestion RequestParam (sprint 6bis)
                 RequestParam requestAnnotation = param.getAnnotation(RequestParam.class);
@@ -237,6 +293,7 @@ public class FrontController extends HttpServlet {
                 }
 
                 args[i] = convertValue(stringValue, param.getType());
+
             } else {
                 // SPRINT 6ter: Injection automatique par nom
                 String stringValue = null;
@@ -302,6 +359,9 @@ public class FrontController extends HttpServlet {
         String viewName = modelView.getView();
         System.out.println("ModelView détecté - Vue: " + viewName);
         System.out.println("Données: " + modelView.getData());
+
+        // SPRINT 8: Ajouter aussi toutes les données si elles existent dans un Map
+        // (Le contrôleur peut avoir ajouté des données via addAllObjects)
 
         // Ajouter les données à la requête
         for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {

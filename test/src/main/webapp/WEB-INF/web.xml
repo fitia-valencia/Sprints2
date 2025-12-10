@@ -5,6 +5,10 @@
     
     <display-name>Test Application</display-name>
     
+    <welcome-file-list>
+        <welcome-file>sprint8-form.jsp</welcome-file>
+    </welcome-file-list>
+
     <servlet>
         <servlet-name>front-controller</servlet-name>
         <servlet-class>testapp.FrontController</servlet-class>

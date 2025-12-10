@@ -5,6 +5,7 @@ com\monframework\annotation\PostMapping.class
 com\monframework\annotation\RequestParam.class
 com\monframework\annotation\DeleteMapping.class
 com\monframework\annotation\RequestMapping.class
+com\monframework\ArgumentResolver.class
 com\monframework\annotation\PathVariable.class
 com\monframework\ModelView.class
 com\monframework\MyClass.class
