@@ -6,9 +6,12 @@ testapp\DemoController.class
 testapp\Sprint8Controller.class
 testapp\PageController.class
 testapp\models\User.class
+testapp\models\Dept.class
 testapp\FormController.class
 testapp\FrontController.class
+testapp\models\Emp.class
 testapp\models\Product.class
+testapp\Sprint8BisController.class
 testapp\User.class
 testapp\HttpMethodController.class
 testapp\AutoParamController.class
