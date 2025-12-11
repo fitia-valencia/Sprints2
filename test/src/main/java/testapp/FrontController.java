@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
@@ -39,48 +40,6 @@ public class FrontController extends HttpServlet {
         displayAllRoutes();
 
         System.out.println("=== INITIALISATION TERMINÉE ===");
-    }
-
-    // Ajoutez cette méthode dans FrontController.java
-    private Map<String, Object> buildDataMap(HttpServletRequest request, Map<String, String> pathVariables) {
-        Map<String, Object> dataMap = new HashMap<>();
-
-        // Récupérer tous les paramètres de la requête
-        Map<String, String[]> requestParams = request.getParameterMap();
-
-        // Ajouter les paramètres de requête
-        for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
-            String[] values = entry.getValue();
-            if (values == null || values.length == 0) {
-                continue;
-            }
-
-            if (values.length == 1) {
-                // Cas d'une seule valeur
-                dataMap.put(entry.getKey(), values[0]);
-            } else {
-                // Cas multiple (checkbox, select multiple)
-                dataMap.put(entry.getKey(), values);
-            }
-        }
-
-        // Ajouter les variables de chemin
-        if (pathVariables != null) {
-            dataMap.putAll(pathVariables);
-        }
-
-        // Gestion spéciale pour les checkbox non cochées
-        // (Optionnel: ajouter explicitement les checkbox manquantes avec false)
-        Enumeration<String> paramNames = request.getParameterNames();
-        while (paramNames.hasMoreElements()) {
-            String paramName = paramNames.nextElement();
-            if (!dataMap.containsKey(paramName)) {
-                dataMap.put(paramName, null);
-            }
-        }
-
-        System.out.println("Map créée avec " + dataMap.size() + " entrées");
-        return dataMap;
     }
 
     private void displayAllRoutes() {
@@ -248,35 +207,94 @@ public class FrontController extends HttpServlet {
     private Object[] prepareArguments(RouteInfo routeInfo, String requestedUrl, HttpServletRequest request) {
         Parameter[] parameters = routeInfo.getParameters();
         Object[] args = new Object[parameters.length];
-
+        
         // Extraire les variables du path
         Map<String, String> pathVariables = routeInfo.extractPathVariablesValues(requestedUrl);
-
+        
+        // Récupérer tous les paramètres de la requête
+        Map<String, String[]> requestParams = request.getParameterMap();
+        
+        // SPRINT 8bis: Analyse des paramètres pour détecter les patterns
+        Map<String, List<String>> paramPatterns = analyzeParameterPatterns(requestParams);
+        
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             String paramName = param.getName();
             Class<?> paramType = param.getType();
-
-            System.out.println(
-                    "Traitement paramètre " + i + ": " + paramName + " (type: " + paramType.getSimpleName() + ")");
-
-            // SPRINT 8: Vérifier si c'est un Map<String, Object> ou Map
+            
+            System.out.println("DEBUG - Traitement paramètre " + i + ": " + paramName + 
+                              " (type: " + paramType.getSimpleName() + ")");
+            
+            // SPRINT 8: Si c'est un Map<String, Object> ou Map pour toutes les données
             if (Map.class.isAssignableFrom(paramType)) {
                 System.out.println("  -> Détection Map: injection de toutes les données");
-                args[i] = buildDataMap(request, pathVariables);
-                System.out.println("  -> Map injectée avec " + ((Map<?, ?>) args[i]).size() + " entrées");
+                Map<String, Object> allData = new HashMap<>();
+                
+                System.out.println("  -> Nombre de paramètres reçus: " + requestParams.size());
+                
+                for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
+                    String paramKey = entry.getKey();
+                    String[] values = entry.getValue();
+                    
+                    if (values == null || values.length == 0) {
+                        continue;
+                    }
+                    
+                    System.out.println("  -> Paramètre " + paramKey + " = " + 
+                                      (values.length == 1 ? values[0] : Arrays.toString(values)));
+                    
+                    if (values.length == 1) {
+                        allData.put(paramKey, values[0]);
+                    } else {
+                        allData.put(paramKey, values);
+                    }
+                }
+                
+                // Ajouter les paramètres du chemin
+                if (pathVariables != null) {
+                    allData.putAll(pathVariables);
+                }
+                
+                args[i] = allData;
+                System.out.println("  -> Map créée avec " + allData.size() + " entrées");
                 continue;
             }
-
-            // Continuer avec le traitement existant pour les autres types
+            
+            // SPRINT 8bis: Si c'est un objet complexe
+            if (isComplexObject(param, paramType)) {
+                System.out.println("  -> Détection objet complexe: " + paramType.getSimpleName());
+                try {
+                    // D'abord créer l'objet
+                    Object obj = paramType.newInstance();
+                    
+                    // Déterminer si on doit utiliser un préfixe
+                    boolean usePrefix = shouldUsePrefix(paramName, paramPatterns);
+                    
+                    System.out.println("  -> Utilisation préfixe pour " + paramName + ": " + usePrefix);
+                    
+                    // Lier les paramètres à l'objet
+                    bindObjectToParameters(obj, paramName, requestParams, usePrefix);
+                    
+                    args[i] = obj;
+                    System.out.println("  -> Objet " + paramType.getSimpleName() + " créé et rempli");
+                    
+                } catch (Exception e) {
+                    System.out.println("  -> Erreur lors de la création de l'objet: " + e.getMessage());
+                    e.printStackTrace();
+                    args[i] = null;
+                }
+                continue;
+            }
+            
+            // Gestion des annotations existantes (@RequestParam, @PathVariable)
             if (param.isAnnotationPresent(PathVariable.class)) {
                 PathVariable pathAnnotation = param.getAnnotation(PathVariable.class);
                 String variableName = pathAnnotation.value();
                 String stringValue = pathVariables.get(variableName);
 
+                // Convertir la valeur selon le type du paramètre
                 args[i] = convertValue(stringValue, param.getType());
                 System.out.println("    @PathVariable " + variableName + " = " + args[i]);
-
             } else if (param.isAnnotationPresent(RequestParam.class)) {
                 // Gestion RequestParam (sprint 6bis)
                 RequestParam requestAnnotation = param.getAnnotation(RequestParam.class);
@@ -293,7 +311,6 @@ public class FrontController extends HttpServlet {
                 }
 
                 args[i] = convertValue(stringValue, param.getType());
-
             } else {
                 // SPRINT 6ter: Injection automatique par nom
                 String stringValue = null;
@@ -325,6 +342,341 @@ public class FrontController extends HttpServlet {
         }
 
         return args;
+    }
+
+    // Analyse les patterns de paramètres pour déterminer si on doit utiliser un préfixe
+    private Map<String, List<String>> analyzeParameterPatterns(Map<String, String[]> requestParams) {
+        Map<String, List<String>> patterns = new HashMap<>();
+        
+        for (String paramName : requestParams.keySet()) {
+            if (paramName.contains(".")) {
+                String prefix = paramName.substring(0, paramName.indexOf('.'));
+                if (!patterns.containsKey(prefix)) {
+                    patterns.put(prefix, new java.util.ArrayList<>());
+                }
+                patterns.get(prefix).add(paramName);
+            }
+        }
+        
+        return patterns;
+    }
+    
+    // Détermine si on doit utiliser un préfixe pour ce paramètre
+    private boolean shouldUsePrefix(String paramName, Map<String, List<String>> paramPatterns) {
+        // Si le paramètre existe dans les patterns, on utilise le préfixe
+        return paramPatterns.containsKey(paramName);
+    }
+    
+    // Lie les paramètres à un objet
+    private void bindObjectToParameters(Object obj, String paramName, Map<String, String[]> requestParams, boolean usePrefix) {
+        Class<?> clazz = obj.getClass();
+        
+        for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
+            String key = entry.getKey();
+            String[] values = entry.getValue();
+            
+            if (values == null || values.length == 0) {
+                continue;
+            }
+            
+            String propertyPath = key;
+            
+            // Si on doit utiliser un préfixe
+            if (usePrefix) {
+                // Vérifier si le paramètre commence par le nom du paramètre
+                if (key.startsWith(paramName + ".")) {
+                    propertyPath = key.substring(paramName.length() + 1);
+                } else {
+                    // Ce paramètre ne concerne pas cet objet
+                    continue;
+                }
+            } else {
+                // Si pas de préfixe, on prend les paramètres sans point
+                // OU les paramètres qui commencent par un mot connu (comme "department.")
+                if (key.contains(".")) {
+                    // C'est peut-être une propriété imbriquée
+                    String firstPart = key.substring(0, key.indexOf('.'));
+                    // Vérifier si cette première partie est un attribut de l'objet
+                    if (hasProperty(clazz, firstPart)) {
+                        propertyPath = key;
+                    } else {
+                        continue;
+                    }
+                }
+            }
+            
+            // Setter la propriété
+            try {
+                setPropertyOnObject(obj, propertyPath, values);
+            } catch (Exception e) {
+                System.out.println("  -> Erreur lors du binding de " + propertyPath + ": " + e.getMessage());
+            }
+        }
+    }
+    
+    // Vérifie si une classe a une propriété (par son nom)
+    private boolean hasProperty(Class<?> clazz, String propertyName) {
+        String getterName = "get" + capitalize(propertyName);
+        String setterPrefix = "set" + capitalize(propertyName);
+        
+        // Chercher un getter
+        for (Method method : clazz.getMethods()) {
+            if (method.getName().equals(getterName) && method.getParameterCount() == 0) {
+                return true;
+            }
+            if (method.getName().startsWith(setterPrefix) && method.getParameterCount() == 1) {
+                return true;
+            }
+        }
+        
+        // Chercher un champ
+        try {
+            clazz.getDeclaredField(propertyName);
+            return true;
+        } catch (NoSuchFieldException e) {
+            return false;
+        }
+    }
+
+    private boolean isComplexObject(Parameter param, Class<?> type) {
+        // Si c'est annoté avec @RequestParam ou @PathVariable, ce n'est pas un objet complexe
+        if (param.isAnnotationPresent(PathVariable.class) || 
+            param.isAnnotationPresent(RequestParam.class)) {
+            return false;
+        }
+        
+        // Si c'est un type simple, ce n'est pas un objet complexe
+        if (isSimpleType(type)) {
+            return false;
+        }
+        
+        // Si c'est un Map, déjà traité séparément
+        if (Map.class.isAssignableFrom(type)) {
+            return false;
+        }
+        
+        // Sinon, c'est un objet complexe
+        return true;
+    }
+
+    private boolean isSimpleType(Class<?> type) {
+        return type == String.class ||
+               type == Integer.class || type == int.class ||
+               type == Long.class || type == long.class ||
+               type == Double.class || type == double.class ||
+               type == Boolean.class || type == boolean.class ||
+               type == Float.class || type == float.class ||
+               type.isEnum() ||
+               type.isArray() && isSimpleType(type.getComponentType());
+    }
+
+    // Méthode pour setter une propriété sur un objet (avec support pour les propriétés imbriquées)
+    private void setPropertyOnObject(Object obj, String propertyPath, String[] values) {
+        try {
+            // Si le chemin contient un point, c'est une propriété imbriquée
+            if (propertyPath.contains(".")) {
+                String[] parts = propertyPath.split("\\.", 2);
+                String propertyName = parts[0];
+                String nestedPath = parts[1];
+                
+                // Récupérer ou créer l'objet imbriqué
+                Object nestedObject = getOrCreateNestedObject(obj, propertyName);
+                if (nestedObject != null) {
+                    setPropertyOnObject(nestedObject, nestedPath, values);
+                } else {
+                    System.out.println("    Cannot create nested object for: " + propertyName);
+                }
+            } else {
+                // Propriété simple
+                setSimpleProperty(obj, propertyPath, values);
+            }
+        } catch (Exception e) {
+            System.out.println("  Error setting property " + propertyPath + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // Méthode pour récupérer ou créer un objet imbriqué
+    private Object getOrCreateNestedObject(Object parent, String propertyName) throws Exception {
+        Class<?> parentClass = parent.getClass();
+        
+        // Chercher un getter
+        String getterName = "get" + capitalize(propertyName);
+        Method getter = null;
+        
+        try {
+            getter = parentClass.getMethod(getterName);
+        } catch (NoSuchMethodException e) {
+            // Essayer avec "is" pour les boolean
+            getterName = "is" + capitalize(propertyName);
+            try {
+                getter = parentClass.getMethod(getterName);
+            } catch (NoSuchMethodException e2) {
+                System.out.println("    No getter found for: " + propertyName);
+                // Essayer d'accéder directement au champ
+                try {
+                    java.lang.reflect.Field field = parentClass.getDeclaredField(propertyName);
+                    field.setAccessible(true);
+                    Object nested = field.get(parent);
+                    if (nested == null) {
+                        // Déterminer le type du champ
+                        Class<?> fieldType = field.getType();
+                        if (!fieldType.isPrimitive() && fieldType != String.class) {
+                            nested = fieldType.newInstance();
+                            field.set(parent, nested);
+                            System.out.println("    Created new " + fieldType.getSimpleName() + " via field access for: " + propertyName);
+                        }
+                    }
+                    return nested;
+                } catch (NoSuchFieldException e3) {
+                    System.out.println("    No field found for: " + propertyName);
+                    return null;
+                }
+            }
+        }
+        
+        if (getter != null) {
+            // Récupérer l'objet existant
+            Object nested = getter.invoke(parent);
+            if (nested == null) {
+                // Créer une nouvelle instance
+                Class<?> nestedType = getter.getReturnType();
+                try {
+                    nested = nestedType.newInstance();
+                    
+                    // Chercher le setter
+                    String setterName = "set" + capitalize(propertyName);
+                    try {
+                        Method setter = parentClass.getMethod(setterName, nestedType);
+                        setter.invoke(parent, nested);
+                        System.out.println("    Created new " + nestedType.getSimpleName() + " via setter for: " + propertyName);
+                    } catch (NoSuchMethodException e) {
+                        System.out.println("    No setter found for: " + propertyName);
+                        // Essayer d'accéder directement au champ
+                        try {
+                            java.lang.reflect.Field field = parentClass.getDeclaredField(propertyName);
+                            field.setAccessible(true);
+                            field.set(parent, nested);
+                            System.out.println("    Set field directly for: " + propertyName);
+                        } catch (NoSuchFieldException e2) {
+                            System.out.println("    Cannot set field for: " + propertyName);
+                        }
+                    }
+                } catch (InstantiationException e) {
+                    System.out.println("    Cannot instantiate " + nestedType.getSimpleName() + ": " + e.getMessage());
+                    return null;
+                }
+            }
+            return nested;
+        }
+        
+        return null;
+    }
+
+    // Méthode pour setter une propriété simple
+    private void setSimpleProperty(Object obj, String propertyName, String[] values) {
+        try {
+            Class<?> clazz = obj.getClass();
+            
+            // Chercher le setter
+            String setterName = "set" + capitalize(propertyName);
+            
+            // D'abord essayer de trouver un setter pour un tableau
+            if (values.length > 1 || (values.length == 1 && values[0].contains(","))) {
+                for (Method method : clazz.getMethods()) {
+                    if (method.getName().equals(setterName) && method.getParameterCount() == 1) {
+                        Class<?> paramType = method.getParameterTypes()[0];
+                        
+                        if (paramType.isArray() && paramType.getComponentType() == String.class) {
+                            // Tableau de String
+                            method.invoke(obj, (Object) values);
+                            System.out.println("    Set array property: " + propertyName + " = " + Arrays.toString(values));
+                            return;
+                        }
+                    }
+                }
+            }
+            
+            // Chercher un setter normal
+            for (Method method : clazz.getMethods()) {
+                if (method.getName().equals(setterName) && method.getParameterCount() == 1) {
+                    Class<?> paramType = method.getParameterTypes()[0];
+                    
+                    if (values.length > 0) {
+                        // Valeur simple
+                        Object convertedValue = convertValue(values[0], paramType);
+                        method.invoke(obj, convertedValue);
+                        System.out.println("    Set simple property: " + propertyName + " = " + convertedValue + " (type: " + paramType.getSimpleName() + ")");
+                        return;
+                    }
+                }
+            }
+            
+            // Si pas de setter, essayer d'accéder au champ directement
+            try {
+                java.lang.reflect.Field field = clazz.getDeclaredField(propertyName);
+                field.setAccessible(true);
+                Class<?> fieldType = field.getType();
+                
+                if (values.length > 0) {
+                    Object convertedValue = convertValue(values[0], fieldType);
+                    field.set(obj, convertedValue);
+                    System.out.println("    Set field directly: " + propertyName + " = " + convertedValue);
+                }
+            } catch (NoSuchFieldException e) {
+                System.out.println("    No setter or field found for: " + propertyName);
+            }
+            
+        } catch (Exception e) {
+            System.out.println("    Error in setSimpleProperty for " + propertyName + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private String capitalize(String str) {
+        if (str == null || str.isEmpty()) return str;
+        return str.substring(0, 1).toUpperCase() + str.substring(1);
+    }
+
+    private Map<String, Object> buildDataMap(HttpServletRequest request, Map<String, String> pathVariables) {
+        Map<String, Object> dataMap = new HashMap<>();
+        
+        // Récupérer tous les paramètres de la requête
+        Map<String, String[]> requestParams = request.getParameterMap();
+        
+        // Ajouter les paramètres de requête
+        for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
+            String[] values = entry.getValue();
+            if (values == null || values.length == 0) {
+                continue;
+            }
+            
+            if (values.length == 1) {
+                // Cas d'une seule valeur
+                dataMap.put(entry.getKey(), values[0]);
+            } else {
+                // Cas multiple (checkbox, select multiple)
+                dataMap.put(entry.getKey(), values);
+            }
+        }
+        
+        // Ajouter les variables de chemin
+        if (pathVariables != null) {
+            dataMap.putAll(pathVariables);
+        }
+        
+        // Gestion spéciale pour les checkbox non cochées
+        // (Optionnel: ajouter explicitement les checkbox manquantes avec false)
+        Enumeration<String> paramNames = request.getParameterNames();
+        while (paramNames.hasMoreElements()) {
+            String paramName = paramNames.nextElement();
+            if (!dataMap.containsKey(paramName)) {
+                dataMap.put(paramName, null);
+            }
+        }
+        
+        System.out.println("Map créée avec " + dataMap.size() + " entrées");
+        return dataMap;
     }
 
     private String extractFromUrlPattern(String urlPattern, String actualUrl, String paramName) {
@@ -359,9 +711,6 @@ public class FrontController extends HttpServlet {
         String viewName = modelView.getView();
         System.out.println("ModelView détecté - Vue: " + viewName);
         System.out.println("Données: " + modelView.getData());
-
-        // SPRINT 8: Ajouter aussi toutes les données si elles existent dans un Map
-        // (Le contrôleur peut avoir ajouté des données via addAllObjects)
 
         // Ajouter les données à la requête
         for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
