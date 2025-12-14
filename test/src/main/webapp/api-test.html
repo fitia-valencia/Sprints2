@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprint 9 - Test API REST</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        .get { background-color: #4CAF50; color: white; }
+        .post { background-color: #2196F3; color: white; }
+        .put { background-color: #FF9800; color: white; }
+        .delete { background-color: #f44336; color: white; }
+        pre { background-color: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto; max-height: 70vh; }
+        .response { margin-top: 10px; }
+        .form-group { margin: 10px 0; }
+        input, textarea { padding: 8px; width: 300px; margin: 5px 0; }
+        label { display: block; font-weight: bold; }
+        .container { display: flex; gap: 20px; }
+        .left { width: 40%; }
+        .right { width: 60%; }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+
+<h1>Sprint 9 - Test API REST avec JSON</h1>
+
+<div class="container">
+    <div class="left">
+        <div class="test-section">
+            <h2>Réponse</h2>
+            <div class="response">
+                <pre id="response">Cliquez sur un bouton pour voir la réponse...</pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="right">
+        <div class="test-section">
+            <h2>Test 1: GET simple</h2>
+            <button class="get" onclick="testGet('/testapp/api/hello')">GET /api/hello</button>
+            <button class="get" onclick="testGet('/testapp/api/employees')">GET /api/employees (Liste)</button>
+            <button class="get" onclick="testGet('/testapp/api/status')">GET /api/status</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 2: GET avec paramètres</h2>
+            <div class="form-group">
+                <label>ID Employé:</label>
+                <input type="number" id="empId" value="1">
+                <button class="get" onclick="testGet('/testapp/api/employees/' + $('#empId').val())">
+                    GET /api/employees/{id}
+                </button>
+            </div>
+
+            <!-- <div class="form-group">
+                <label>Recherche:</label>
+                <input type="text" id="searchQuery" value="John">
+                <button class="get" onclick="testGet('/testapp/api/employees/search?q=' + $('#searchQuery').val())">
+                    GET /api/employees/search?q=
+                </button>
+            </div> -->
+        </div>
+
+        <div class="test-section">
+            <h2>Test 3: POST - Créer un employé</h2>
+            <div class="form-group">
+                <label>Nom:</label>
+                <input type="text" id="empName" value="Nouvel Employé">
+            </div>
+            <button class="post" onclick="createEmployee()">POST /api/employees</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 4: PUT - Mettre à jour un employé</h2>
+            <div class="form-group">
+                <label>ID à mettre à jour:</label>
+                <input type="number" id="updateId" value="1">
+            </div>
+            <div class="form-group">
+                <label>Nouveau nom:</label>
+                <input type="text" id="updateName" value="Nom Modifié">
+            </div>
+            <button class="put" onclick="updateEmployee()">PUT /api/employees/{id}</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 5: DELETE - Supprimer un employé</h2>
+            <div class="form-group">
+                <label>ID à supprimer:</label>
+                <input type="number" id="deleteId" value="2">
+            </div>
+            <button class="delete" onclick="deleteEmployee()">DELETE /api/employees/{id}</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Test 6: Gestion d'erreurs</h2>
+            <button class="get" onclick="testGet('/testapp/api/employees/999')">
+                GET Employé inexistant (404)
+            </button>
+            <button class="get" onclick="testGet('/testapp/api/error-test')">
+                GET /api/error-test (400)
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const contextPath = '/testapp';
+    
+    function formatJson(json) {
+        try {
+            return JSON.stringify(JSON.parse(json), null, 2);
+        } catch (e) {
+            return json;
+        }
+    }
+
+    function displayResponse(method, url, response, status) {
+        let html = `${method} ${url} (Status: ${status})\n\n`;
+        html += formatJson(response);
+        $('#response').html(html);
+    }
+
+    function testGet(url) {
+        // Préfixer avec le contexte si pas déjà présent
+        let fullUrl = url.startsWith(contextPath) ? url : contextPath + url;
+        
+        $.ajax({
+            url: fullUrl,
+            type: 'GET',
+            dataType: 'json',
+            success: function (data, status, xhr) {
+                displayResponse('GET', url, JSON.stringify(data), xhr.status);
+            },
+            error: function (xhr) {
+                displayResponse('GET', url, xhr.responseText || 'Erreur', xhr.status);
+            }
+        });
+    }
+
+    function createEmployee() {
+        const employee = {
+            name: $('#empName').val()
+        };
+
+        $.ajax({
+            url: contextPath + '/api/employees',
+            type: 'POST',
+            contentType: 'application/x-www-form-urlencoded',
+            data: employee,
+            success: function (data, status, xhr) {
+                displayResponse('POST', '/api/employees', JSON.stringify(data), xhr.status);
+            },
+            error: function (xhr) {
+                displayResponse('POST', '/api/employees', xhr.responseText || 'Erreur', xhr.status);
+            }
+        });
+    }
+
+    function updateEmployee() {
+        const id = $('#updateId').val();
+        const employee = {
+            name: $('#updateName').val()
+        };
+
+        $.ajax({
+            url: contextPath + '/api/employees/' + id,
+            type: 'PUT',
+            contentType: 'application/x-www-form-urlencoded',
+            data: employee,
+            success: function (data, status, xhr) {
+                displayResponse('PUT', '/api/employees/' + id, JSON.stringify(data), xhr.status);
+            },
+            error: function (xhr) {
+                displayResponse('PUT', '/api/employees/' + id, xhr.responseText || 'Erreur', xhr.status);
+            }
+        });
+    }
+
+    function deleteEmployee() {
+        const id = $('#deleteId').val();
+
+        $.ajax({
+            url: contextPath + '/api/employees/' + id,
+            type: 'DELETE',
+            success: function (data, status, xhr) {
+                displayResponse(
+                    'DELETE',
+                    '/api/employees/' + id,
+                    xhr.status === 204 ? 'No Content' : JSON.stringify(data),
+                    xhr.status
+                );
+            },
+            error: function (xhr) {
+                displayResponse('DELETE', '/api/employees/' + id, xhr.responseText || 'Erreur', xhr.status);
+            }
+        });
+    }
+
+    testGet('/testapp/api/hello');
+</script>
+
+</body>
+</html>

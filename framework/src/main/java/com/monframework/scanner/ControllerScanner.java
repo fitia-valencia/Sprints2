@@ -10,6 +10,7 @@ import com.monframework.annotation.RequestMapping;
 import com.monframework.annotation.RequestParam;
 import com.monframework.annotation.Route;
 import org.reflections.Reflections;
+import com.monframework.annotation.RestController;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -29,19 +30,30 @@ public class ControllerScanner {
 
         Reflections reflections = new Reflections(packageName);
 
-        // Trouver toutes les classes annotées @Controller
+        // Trouver toutes les classes annotées @Controller et @RestController
         Set<Class<?>> controllers = reflections.getTypesAnnotatedWith(Controller.class);
-        System.out.println(" Contrôleurs trouvés: " + controllers.size());
-
-        for (Class<?> controllerClass : controllers) {
+        Set<Class<?>> restControllers = reflections.getTypesAnnotatedWith(RestController.class);
+        Set<Class<?>> allControllers = new java.util.HashSet<>();
+        allControllers.addAll(controllers);
+        allControllers.addAll(restControllers);
+        for (Class<?> controllerClass : allControllers) {
             scanController(controllerClass);
         }
     }
 
     private void scanController(Class<?> controllerClass) {
-        Controller controllerAnnotation = controllerClass.getAnnotation(Controller.class);
-        String baseUrl = controllerAnnotation.value();
-
+        String baseUrl = "";
+        
+        // Vérifiez si c'est un @Controller
+        if (controllerClass.isAnnotationPresent(Controller.class)) {
+            Controller controllerAnnotation = controllerClass.getAnnotation(Controller.class);
+            baseUrl = controllerAnnotation.value();
+        }
+        // Ou si c'est un @RestController (qui n'a pas de value())
+        else if (controllerClass.isAnnotationPresent(RestController.class)) {
+            baseUrl = "";  // RestController n'a pas d'URL de base
+        }
+        
         System.out.println("\n CONTRÔLEUR: " + controllerClass.getSimpleName());
         System.out.println("    URL de base: " + baseUrl);
         System.out.println("    Méthodes HTTP:");

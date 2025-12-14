@@ -1,3 +1,5 @@
+com\monframework\JsonResponse.class
+com\monframework\annotation\JsonAPI.class
 com\monframework\scanner\SimpleRouteScanner.class
 com\monframework\annotation\PutMapping.class
 com\monframework\annotation\GetMapping.class
@@ -15,6 +17,8 @@ com\monframework\scanner\AnnotationScanner.class
 com\monframework\scanner\RouteScanner.class
 com\monframework\DemoApplication.class
 com\monframework\ObjectBinder.class
+com\monframework\JsonUtil.class
 com\monframework\annotation\Route.class
 com\monframework\annotation\Controller.class
 com\monframework\scanner\ControllerScanner.class
+com\monframework\annotation\RestController.class
