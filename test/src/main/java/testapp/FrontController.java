@@ -22,6 +22,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.monframework.annotation.JsonAPI;
+import com.monframework.annotation.RestController;
+import com.monframework.JsonUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 public class FrontController extends HttpServlet {
 
     private ControllerScanner scanner;
@@ -104,7 +109,7 @@ public class FrontController extends HttpServlet {
                 if (result instanceof ModelView) {
                     handleModelView((ModelView) result, request, response);
                 } else {
-                    handleMethodResult(result, out, method);
+                    handleMethodResult(result, out, method, response);
                 }
 
             } catch (Exception e) {
@@ -207,77 +212,77 @@ public class FrontController extends HttpServlet {
     private Object[] prepareArguments(RouteInfo routeInfo, String requestedUrl, HttpServletRequest request) {
         Parameter[] parameters = routeInfo.getParameters();
         Object[] args = new Object[parameters.length];
-        
+
         // Extraire les variables du path
         Map<String, String> pathVariables = routeInfo.extractPathVariablesValues(requestedUrl);
-        
+
         // Récupérer tous les paramètres de la requête
         Map<String, String[]> requestParams = request.getParameterMap();
-        
+
         // SPRINT 8bis: Analyse des paramètres pour détecter les patterns
         Map<String, List<String>> paramPatterns = analyzeParameterPatterns(requestParams);
-        
+
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             String paramName = param.getName();
             Class<?> paramType = param.getType();
-            
-            System.out.println("DEBUG - Traitement paramètre " + i + ": " + paramName + 
-                              " (type: " + paramType.getSimpleName() + ")");
-            
+
+            System.out.println("DEBUG - Traitement paramètre " + i + ": " + paramName +
+                    " (type: " + paramType.getSimpleName() + ")");
+
             // SPRINT 8: Si c'est un Map<String, Object> ou Map pour toutes les données
             if (Map.class.isAssignableFrom(paramType)) {
                 System.out.println("  -> Détection Map: injection de toutes les données");
                 Map<String, Object> allData = new HashMap<>();
-                
+
                 System.out.println("  -> Nombre de paramètres reçus: " + requestParams.size());
-                
+
                 for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
                     String paramKey = entry.getKey();
                     String[] values = entry.getValue();
-                    
+
                     if (values == null || values.length == 0) {
                         continue;
                     }
-                    
-                    System.out.println("  -> Paramètre " + paramKey + " = " + 
-                                      (values.length == 1 ? values[0] : Arrays.toString(values)));
-                    
+
+                    System.out.println("  -> Paramètre " + paramKey + " = " +
+                            (values.length == 1 ? values[0] : Arrays.toString(values)));
+
                     if (values.length == 1) {
                         allData.put(paramKey, values[0]);
                     } else {
                         allData.put(paramKey, values);
                     }
                 }
-                
+
                 // Ajouter les paramètres du chemin
                 if (pathVariables != null) {
                     allData.putAll(pathVariables);
                 }
-                
+
                 args[i] = allData;
                 System.out.println("  -> Map créée avec " + allData.size() + " entrées");
                 continue;
             }
-            
+
             // SPRINT 8bis: Si c'est un objet complexe
             if (isComplexObject(param, paramType)) {
                 System.out.println("  -> Détection objet complexe: " + paramType.getSimpleName());
                 try {
                     // D'abord créer l'objet
                     Object obj = paramType.newInstance();
-                    
+
                     // Déterminer si on doit utiliser un préfixe
                     boolean usePrefix = shouldUsePrefix(paramName, paramPatterns);
-                    
+
                     System.out.println("  -> Utilisation préfixe pour " + paramName + ": " + usePrefix);
-                    
+
                     // Lier les paramètres à l'objet
                     bindObjectToParameters(obj, paramName, requestParams, usePrefix);
-                    
+
                     args[i] = obj;
                     System.out.println("  -> Objet " + paramType.getSimpleName() + " créé et rempli");
-                    
+
                 } catch (Exception e) {
                     System.out.println("  -> Erreur lors de la création de l'objet: " + e.getMessage());
                     e.printStackTrace();
@@ -285,7 +290,7 @@ public class FrontController extends HttpServlet {
                 }
                 continue;
             }
-            
+
             // Gestion des annotations existantes (@RequestParam, @PathVariable)
             if (param.isAnnotationPresent(PathVariable.class)) {
                 PathVariable pathAnnotation = param.getAnnotation(PathVariable.class);
@@ -344,10 +349,11 @@ public class FrontController extends HttpServlet {
         return args;
     }
 
-    // Analyse les patterns de paramètres pour déterminer si on doit utiliser un préfixe
+    // Analyse les patterns de paramètres pour déterminer si on doit utiliser un
+    // préfixe
     private Map<String, List<String>> analyzeParameterPatterns(Map<String, String[]> requestParams) {
         Map<String, List<String>> patterns = new HashMap<>();
-        
+
         for (String paramName : requestParams.keySet()) {
             if (paramName.contains(".")) {
                 String prefix = paramName.substring(0, paramName.indexOf('.'));
@@ -357,30 +363,31 @@ public class FrontController extends HttpServlet {
                 patterns.get(prefix).add(paramName);
             }
         }
-        
+
         return patterns;
     }
-    
+
     // Détermine si on doit utiliser un préfixe pour ce paramètre
     private boolean shouldUsePrefix(String paramName, Map<String, List<String>> paramPatterns) {
         // Si le paramètre existe dans les patterns, on utilise le préfixe
         return paramPatterns.containsKey(paramName);
     }
-    
+
     // Lie les paramètres à un objet
-    private void bindObjectToParameters(Object obj, String paramName, Map<String, String[]> requestParams, boolean usePrefix) {
+    private void bindObjectToParameters(Object obj, String paramName, Map<String, String[]> requestParams,
+            boolean usePrefix) {
         Class<?> clazz = obj.getClass();
-        
+
         for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
             String key = entry.getKey();
             String[] values = entry.getValue();
-            
+
             if (values == null || values.length == 0) {
                 continue;
             }
-            
+
             String propertyPath = key;
-            
+
             // Si on doit utiliser un préfixe
             if (usePrefix) {
                 // Vérifier si le paramètre commence par le nom du paramètre
@@ -404,7 +411,7 @@ public class FrontController extends HttpServlet {
                     }
                 }
             }
-            
+
             // Setter la propriété
             try {
                 setPropertyOnObject(obj, propertyPath, values);
@@ -413,12 +420,12 @@ public class FrontController extends HttpServlet {
             }
         }
     }
-    
+
     // Vérifie si une classe a une propriété (par son nom)
     private boolean hasProperty(Class<?> clazz, String propertyName) {
         String getterName = "get" + capitalize(propertyName);
         String setterPrefix = "set" + capitalize(propertyName);
-        
+
         // Chercher un getter
         for (Method method : clazz.getMethods()) {
             if (method.getName().equals(getterName) && method.getParameterCount() == 0) {
@@ -428,7 +435,7 @@ public class FrontController extends HttpServlet {
                 return true;
             }
         }
-        
+
         // Chercher un champ
         try {
             clazz.getDeclaredField(propertyName);
@@ -439,38 +446,40 @@ public class FrontController extends HttpServlet {
     }
 
     private boolean isComplexObject(Parameter param, Class<?> type) {
-        // Si c'est annoté avec @RequestParam ou @PathVariable, ce n'est pas un objet complexe
-        if (param.isAnnotationPresent(PathVariable.class) || 
-            param.isAnnotationPresent(RequestParam.class)) {
+        // Si c'est annoté avec @RequestParam ou @PathVariable, ce n'est pas un objet
+        // complexe
+        if (param.isAnnotationPresent(PathVariable.class) ||
+                param.isAnnotationPresent(RequestParam.class)) {
             return false;
         }
-        
+
         // Si c'est un type simple, ce n'est pas un objet complexe
         if (isSimpleType(type)) {
             return false;
         }
-        
+
         // Si c'est un Map, déjà traité séparément
         if (Map.class.isAssignableFrom(type)) {
             return false;
         }
-        
+
         // Sinon, c'est un objet complexe
         return true;
     }
 
     private boolean isSimpleType(Class<?> type) {
         return type == String.class ||
-               type == Integer.class || type == int.class ||
-               type == Long.class || type == long.class ||
-               type == Double.class || type == double.class ||
-               type == Boolean.class || type == boolean.class ||
-               type == Float.class || type == float.class ||
-               type.isEnum() ||
-               type.isArray() && isSimpleType(type.getComponentType());
+                type == Integer.class || type == int.class ||
+                type == Long.class || type == long.class ||
+                type == Double.class || type == double.class ||
+                type == Boolean.class || type == boolean.class ||
+                type == Float.class || type == float.class ||
+                type.isEnum() ||
+                type.isArray() && isSimpleType(type.getComponentType());
     }
 
-    // Méthode pour setter une propriété sur un objet (avec support pour les propriétés imbriquées)
+    // Méthode pour setter une propriété sur un objet (avec support pour les
+    // propriétés imbriquées)
     private void setPropertyOnObject(Object obj, String propertyPath, String[] values) {
         try {
             // Si le chemin contient un point, c'est une propriété imbriquée
@@ -478,7 +487,7 @@ public class FrontController extends HttpServlet {
                 String[] parts = propertyPath.split("\\.", 2);
                 String propertyName = parts[0];
                 String nestedPath = parts[1];
-                
+
                 // Récupérer ou créer l'objet imbriqué
                 Object nestedObject = getOrCreateNestedObject(obj, propertyName);
                 if (nestedObject != null) {
@@ -499,11 +508,11 @@ public class FrontController extends HttpServlet {
     // Méthode pour récupérer ou créer un objet imbriqué
     private Object getOrCreateNestedObject(Object parent, String propertyName) throws Exception {
         Class<?> parentClass = parent.getClass();
-        
+
         // Chercher un getter
         String getterName = "get" + capitalize(propertyName);
         Method getter = null;
-        
+
         try {
             getter = parentClass.getMethod(getterName);
         } catch (NoSuchMethodException e) {
@@ -524,7 +533,8 @@ public class FrontController extends HttpServlet {
                         if (!fieldType.isPrimitive() && fieldType != String.class) {
                             nested = fieldType.newInstance();
                             field.set(parent, nested);
-                            System.out.println("    Created new " + fieldType.getSimpleName() + " via field access for: " + propertyName);
+                            System.out.println("    Created new " + fieldType.getSimpleName()
+                                    + " via field access for: " + propertyName);
                         }
                     }
                     return nested;
@@ -534,7 +544,7 @@ public class FrontController extends HttpServlet {
                 }
             }
         }
-        
+
         if (getter != null) {
             // Récupérer l'objet existant
             Object nested = getter.invoke(parent);
@@ -543,13 +553,14 @@ public class FrontController extends HttpServlet {
                 Class<?> nestedType = getter.getReturnType();
                 try {
                     nested = nestedType.newInstance();
-                    
+
                     // Chercher le setter
                     String setterName = "set" + capitalize(propertyName);
                     try {
                         Method setter = parentClass.getMethod(setterName, nestedType);
                         setter.invoke(parent, nested);
-                        System.out.println("    Created new " + nestedType.getSimpleName() + " via setter for: " + propertyName);
+                        System.out.println(
+                                "    Created new " + nestedType.getSimpleName() + " via setter for: " + propertyName);
                     } catch (NoSuchMethodException e) {
                         System.out.println("    No setter found for: " + propertyName);
                         // Essayer d'accéder directement au champ
@@ -569,7 +580,7 @@ public class FrontController extends HttpServlet {
             }
             return nested;
         }
-        
+
         return null;
     }
 
@@ -577,47 +588,49 @@ public class FrontController extends HttpServlet {
     private void setSimpleProperty(Object obj, String propertyName, String[] values) {
         try {
             Class<?> clazz = obj.getClass();
-            
+
             // Chercher le setter
             String setterName = "set" + capitalize(propertyName);
-            
+
             // D'abord essayer de trouver un setter pour un tableau
             if (values.length > 1 || (values.length == 1 && values[0].contains(","))) {
                 for (Method method : clazz.getMethods()) {
                     if (method.getName().equals(setterName) && method.getParameterCount() == 1) {
                         Class<?> paramType = method.getParameterTypes()[0];
-                        
+
                         if (paramType.isArray() && paramType.getComponentType() == String.class) {
                             // Tableau de String
                             method.invoke(obj, (Object) values);
-                            System.out.println("    Set array property: " + propertyName + " = " + Arrays.toString(values));
+                            System.out.println(
+                                    "    Set array property: " + propertyName + " = " + Arrays.toString(values));
                             return;
                         }
                     }
                 }
             }
-            
+
             // Chercher un setter normal
             for (Method method : clazz.getMethods()) {
                 if (method.getName().equals(setterName) && method.getParameterCount() == 1) {
                     Class<?> paramType = method.getParameterTypes()[0];
-                    
+
                     if (values.length > 0) {
                         // Valeur simple
                         Object convertedValue = convertValue(values[0], paramType);
                         method.invoke(obj, convertedValue);
-                        System.out.println("    Set simple property: " + propertyName + " = " + convertedValue + " (type: " + paramType.getSimpleName() + ")");
+                        System.out.println("    Set simple property: " + propertyName + " = " + convertedValue
+                                + " (type: " + paramType.getSimpleName() + ")");
                         return;
                     }
                 }
             }
-            
+
             // Si pas de setter, essayer d'accéder au champ directement
             try {
                 java.lang.reflect.Field field = clazz.getDeclaredField(propertyName);
                 field.setAccessible(true);
                 Class<?> fieldType = field.getType();
-                
+
                 if (values.length > 0) {
                     Object convertedValue = convertValue(values[0], fieldType);
                     field.set(obj, convertedValue);
@@ -626,7 +639,7 @@ public class FrontController extends HttpServlet {
             } catch (NoSuchFieldException e) {
                 System.out.println("    No setter or field found for: " + propertyName);
             }
-            
+
         } catch (Exception e) {
             System.out.println("    Error in setSimpleProperty for " + propertyName + ": " + e.getMessage());
             e.printStackTrace();
@@ -634,23 +647,24 @@ public class FrontController extends HttpServlet {
     }
 
     private String capitalize(String str) {
-        if (str == null || str.isEmpty()) return str;
+        if (str == null || str.isEmpty())
+            return str;
         return str.substring(0, 1).toUpperCase() + str.substring(1);
     }
 
     private Map<String, Object> buildDataMap(HttpServletRequest request, Map<String, String> pathVariables) {
         Map<String, Object> dataMap = new HashMap<>();
-        
+
         // Récupérer tous les paramètres de la requête
         Map<String, String[]> requestParams = request.getParameterMap();
-        
+
         // Ajouter les paramètres de requête
         for (Map.Entry<String, String[]> entry : requestParams.entrySet()) {
             String[] values = entry.getValue();
             if (values == null || values.length == 0) {
                 continue;
             }
-            
+
             if (values.length == 1) {
                 // Cas d'une seule valeur
                 dataMap.put(entry.getKey(), values[0]);
@@ -659,12 +673,12 @@ public class FrontController extends HttpServlet {
                 dataMap.put(entry.getKey(), values);
             }
         }
-        
+
         // Ajouter les variables de chemin
         if (pathVariables != null) {
             dataMap.putAll(pathVariables);
         }
-        
+
         // Gestion spéciale pour les checkbox non cochées
         // (Optionnel: ajouter explicitement les checkbox manquantes avec false)
         Enumeration<String> paramNames = request.getParameterNames();
@@ -674,7 +688,7 @@ public class FrontController extends HttpServlet {
                 dataMap.put(paramName, null);
             }
         }
-        
+
         System.out.println("Map créée avec " + dataMap.size() + " entrées");
         return dataMap;
     }
@@ -744,7 +758,20 @@ public class FrontController extends HttpServlet {
         getServletContext().getNamedDispatcher("default").forward(request, response);
     }
 
-    private void handleMethodResult(Object result, PrintWriter out, Method method) {
+    private void handleMethodResult(Object result, PrintWriter out, Method method,
+            HttpServletResponse response) {
+
+        // Si c'est une méthode JSON, traiter différemment
+        if (isJsonResponseMethod(method)) {
+            try {
+                handleJsonResponse(result, method, null, response);
+                return;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        // Sinon, traitement normal
         System.out.println("Affichage direct du résultat...");
 
         out.println("<html><head><title>Résultat</title></head><body>");
@@ -819,7 +846,7 @@ public class FrontController extends HttpServlet {
                 if (result instanceof ModelView) {
                     handleModelView((ModelView) result, request, response);
                 } else {
-                    handleMethodResult(result, out, method);
+                    handleMethodResult(result, out, method, response);
                 }
 
             } catch (Exception e) {
@@ -859,4 +886,97 @@ public class FrontController extends HttpServlet {
 
         return method;
     }
+
+    // Méthode pour vérifier si une méthode est annotée avec @JsonResponse
+    private boolean isJsonResponseMethod(Method method) {
+        return method.isAnnotationPresent(JsonAPI.class) ||
+                method.getDeclaringClass().isAnnotationPresent(RestController.class);
+    }
+
+    // Méthode pour vérifier si une classe est un RestController
+    private boolean isRestController(Class<?> clazz) {
+        return clazz.isAnnotationPresent(RestController.class);
+    }
+
+    // Méthode pour traiter une réponse JSON
+    private void handleJsonResponse(Object result, Method method,
+            HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+
+        response.setContentType("application/json; charset=UTF-8");
+        response.setCharacterEncoding("UTF-8");
+
+        // Récupérer l'annotation @JsonAPI si présente
+        JsonAPI jsonAnnotation = method.getAnnotation(JsonAPI.class);
+        int statusCode = 200;
+        String customMessage = "";
+
+        // DÉTERMINER LE CODE DE STATUT EN FONCTION DU RÉSULTAT
+        // 1. Vérifier d'abord si c'est un JsonResponse et utiliser son code
+        if (result instanceof com.monframework.JsonResponse) {
+            com.monframework.JsonResponse jsonResponse = (com.monframework.JsonResponse) result;
+            statusCode = jsonResponse.getCode();
+        }
+
+        // 2. L'annotation @JsonAPI peut écraser le code si elle spécifie explicitement
+        // un code
+        if (jsonAnnotation != null) {
+            // Si l'annotation a un code différent de 200, l'utiliser
+            if (jsonAnnotation.statusCode() != 200) {
+                statusCode = jsonAnnotation.statusCode();
+            }
+            customMessage = jsonAnnotation.message();
+            if (jsonAnnotation.contentType() != null && !jsonAnnotation.contentType().isEmpty()) {
+                response.setContentType(jsonAnnotation.contentType() + "; charset=UTF-8");
+            }
+        }
+
+        response.setStatus(statusCode); // Définir le code HTTP correct
+
+        // Préparer la réponse
+        Object jsonResult;
+
+        if (result instanceof com.monframework.JsonResponse) {
+            // Si c'est déjà un JsonResponse, l'utiliser tel quel
+            jsonResult = result;
+        } else if (result instanceof String && ((String) result).startsWith("{")) {
+            // Si c'est déjà une chaîne JSON, la retourner directement
+            response.getWriter().write((String) result);
+            return;
+        } else {
+            // Sinon, encapsuler dans un JsonResponse standard
+            com.monframework.JsonResponse jsonResponse;
+
+            if (result instanceof List) {
+                List<?> list = (List<?>) result;
+                jsonResponse = com.monframework.JsonResponse.withCount(list, list.size());
+            } else if (result instanceof Object[]) {
+                Object[] array = (Object[]) result;
+                jsonResponse = com.monframework.JsonResponse.withCount(array, array.length);
+            } else {
+                jsonResponse = com.monframework.JsonResponse.success(result);
+            }
+
+            // Si l'annotation a un message, l'utiliser
+            if (!customMessage.isEmpty()) {
+                jsonResponse.setMessage(customMessage);
+            }
+
+            // Si le résultat n'était pas un JsonResponse mais que l'annotation a un code,
+            // utiliser ce code pour le JsonResponse créé
+            if (jsonAnnotation != null && jsonAnnotation.statusCode() != 200) {
+                jsonResponse.setCode(jsonAnnotation.statusCode());
+            }
+
+            jsonResult = jsonResponse;
+        }
+
+        // Convertir en JSON
+        String json = JsonUtil.toJson(jsonResult);
+        response.getWriter().write(json);
+
+        System.out.println("Réponse JSON envoyée (status " + statusCode + "): " +
+                json.substring(0, Math.min(200, json.length())) + "...");
+    }
+
 }
