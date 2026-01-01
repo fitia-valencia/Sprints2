@@ -14,5 +14,6 @@ testapp\models\Emp.class
 testapp\models\Product.class
 testapp\Sprint8BisController.class
 testapp\User.class
+testapp\FileUploadController.class
 testapp\HttpMethodController.class
 testapp\AutoParamController.class

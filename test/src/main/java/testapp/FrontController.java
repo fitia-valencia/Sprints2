@@ -9,14 +9,21 @@ import com.monframework.annotation.RequestParam;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
+import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.Part;
+
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +33,18 @@ import com.monframework.annotation.JsonAPI;
 import com.monframework.annotation.RestController;
 import com.monframework.JsonUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import javax.servlet.annotation.MultipartConfig;
+import javax.servlet.http.Part;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collection;
+
+@MultipartConfig(location = "/tmp", maxFileSize = 10 * 1024 * 1024, // 10MB
+        maxRequestSize = 50 * 1024 * 1024, // 50MB
+        fileSizeThreshold = 1024 * 1024 // 1MB
+)
 
 public class FrontController extends HttpServlet {
 
@@ -100,7 +119,7 @@ public class FrontController extends HttpServlet {
                 System.out.println("Exécution: " + method.getDeclaringClass().getSimpleName() + "." + method.getName());
 
                 // Préparer les arguments pour la méthode
-                Object[] args = prepareArguments(routeInfo, requestedUrl, request);
+                Object[] args = prepareArguments(routeInfo, requestedUrl, request, null);
 
                 // Exécuter la méthode avec les arguments
                 Object result = method.invoke(controllerInstance, args);
@@ -209,15 +228,27 @@ public class FrontController extends HttpServlet {
         return stringValue;
     }
 
-    private Object[] prepareArguments(RouteInfo routeInfo, String requestedUrl, HttpServletRequest request) {
+    private Object[] prepareArguments(RouteInfo routeInfo, String requestedUrl,
+            HttpServletRequest request,
+            Map<String, Object> multipartData) {
+
         Parameter[] parameters = routeInfo.getParameters();
         Object[] args = new Object[parameters.length];
 
         // Extraire les variables du path
         Map<String, String> pathVariables = routeInfo.extractPathVariablesValues(requestedUrl);
 
-        // Récupérer tous les paramètres de la requête
-        Map<String, String[]> requestParams = request.getParameterMap();
+        // SPRINT 10: Gestion des données multipart ou des paramètres normaux
+        Map<String, String[]> requestParams;
+
+        if (multipartData != null) {
+            // Si nous avons des données multipart, extraire les paramètres texte
+            requestParams = extractTextParametersFromMultipart(multipartData);
+            System.out.println("  -> Traitement multipart, paramètres texte: " + requestParams.size());
+        } else {
+            // Sinon utiliser les paramètres normaux
+            requestParams = request.getParameterMap();
+        }
 
         // SPRINT 8bis: Analyse des paramètres pour détecter les patterns
         Map<String, List<String>> paramPatterns = analyzeParameterPatterns(requestParams);
@@ -229,6 +260,62 @@ public class FrontController extends HttpServlet {
 
             System.out.println("DEBUG - Traitement paramètre " + i + ": " + paramName +
                     " (type: " + paramType.getSimpleName() + ")");
+
+            // SPRINT 10: Gestion des fichiers uploadés
+            if (multipartData != null && param.isAnnotationPresent(com.monframework.annotation.UploadedFile.class)) {
+                com.monframework.annotation.UploadedFile uploadAnnotation = param
+                        .getAnnotation(com.monframework.annotation.UploadedFile.class);
+                String fileParamName = uploadAnnotation.value().isEmpty() ? paramName : uploadAnnotation.value();
+
+                System.out.println("  -> Annotation @UploadedFile détectée pour: " + fileParamName);
+
+                if (multipartData.containsKey(fileParamName)) {
+                    Object fileInfo = multipartData.get(fileParamName);
+
+                    if (fileInfo instanceof Map) {
+                        Map<String, Object> fileMap = (Map<String, Object>) fileInfo;
+
+                        // Gestion selon le type attendu
+                        if (paramType == byte[].class) {
+                            args[i] = fileMap.get("bytes");
+                            System.out.println("  -> Fichier injecté comme byte[]: " +
+                                    ((byte[]) args[i]).length + " bytes");
+                        } else if (paramType == Byte[].class) {
+                            byte[] primitiveBytes = (byte[]) fileMap.get("bytes");
+                            Byte[] objectBytes = new Byte[primitiveBytes.length];
+                            for (int j = 0; j < primitiveBytes.length; j++) {
+                                objectBytes[j] = primitiveBytes[j];
+                            }
+                            args[i] = objectBytes;
+                            System.out.println("  -> Fichier injecté comme Byte[]: " +
+                                    objectBytes.length + " bytes");
+                        } else if (paramType == Map.class) {
+                            args[i] = fileMap;
+                            System.out.println("  -> Fichier injecté comme Map: " + fileMap.keySet());
+                        } else if (paramType == List.class || paramType == ArrayList.class) {
+                            // Pour les fichiers multiples
+                            List<byte[]> fileList = new ArrayList<>();
+                            if (fileMap.containsKey("bytes")) {
+                                fileList.add((byte[]) fileMap.get("bytes"));
+                                System.out.println("  -> Fichier injecté comme List<byte[]>: 1 fichier");
+                            } else if (fileMap.containsKey("files")) {
+                                // Pour plusieurs fichiers avec le même nom
+                                List<Map<String, Object>> files = (List<Map<String, Object>>) fileMap.get("files");
+                                for (Map<String, Object> file : files) {
+                                    fileList.add((byte[]) file.get("bytes"));
+                                }
+                                System.out.println("  -> Fichiers injectés comme List<byte[]>: " +
+                                        fileList.size() + " fichiers");
+                            }
+                            args[i] = fileList;
+                        }
+                    }
+                } else {
+                    System.out.println("  -> Fichier non trouvé pour le paramètre: " + fileParamName);
+                    args[i] = null;
+                }
+                continue;
+            }
 
             // SPRINT 8: Si c'est un Map<String, Object> ou Map pour toutes les données
             if (Map.class.isAssignableFrom(paramType)) {
@@ -258,6 +345,12 @@ public class FrontController extends HttpServlet {
                 // Ajouter les paramètres du chemin
                 if (pathVariables != null) {
                     allData.putAll(pathVariables);
+                }
+
+                // SPRINT 10: Ajouter les fichiers multipart si présents
+                if (multipartData != null) {
+                    allData.putAll(multipartData);
+                    System.out.println("  -> Ajout des données multipart à la Map");
                 }
 
                 args[i] = allData;
@@ -305,7 +398,18 @@ public class FrontController extends HttpServlet {
                 RequestParam requestAnnotation = param.getAnnotation(RequestParam.class);
                 String defaultValue = requestAnnotation.defaultValue();
 
-                String stringValue = request.getParameter(paramName);
+                // SPRINT 10: Chercher dans les paramètres texte d'abord
+                String stringValue = null;
+                if (requestParams.containsKey(paramName) && requestParams.get(paramName).length > 0) {
+                    stringValue = requestParams.get(paramName)[0];
+                } else if (multipartData != null && multipartData.containsKey(paramName)) {
+                    // SPRINT 10: Si c'est dans les données multipart (champ texte)
+                    Object value = multipartData.get(paramName);
+                    if (value instanceof String) {
+                        stringValue = (String) value;
+                    }
+                }
+
                 if (stringValue == null && !defaultValue.isEmpty()) {
                     stringValue = defaultValue;
                     System.out.println("    @RequestParam " + paramName + " (valeur par défaut) = " + stringValue);
@@ -326,11 +430,19 @@ public class FrontController extends HttpServlet {
                     System.out.println("     Trouvé dans pathVariables: " + stringValue);
                 }
                 // 2. Chercher dans les paramètres de requête
-                else if (request.getParameter(paramName) != null) {
-                    stringValue = request.getParameter(paramName);
+                else if (requestParams.containsKey(paramName) && requestParams.get(paramName).length > 0) {
+                    stringValue = requestParams.get(paramName)[0];
                     System.out.println("     Trouvé dans query parameters: " + stringValue);
                 }
-                // 3. Si pas trouvé, essayer avec le nom de la variable dans l'URL
+                // 3. SPRINT 10: Chercher dans les données multipart (champs texte)
+                else if (multipartData != null && multipartData.containsKey(paramName)) {
+                    Object value = multipartData.get(paramName);
+                    if (value instanceof String) {
+                        stringValue = (String) value;
+                        System.out.println("     Trouvé dans multipart data: " + stringValue);
+                    }
+                }
+                // 4. Si pas trouvé, essayer avec le nom de la variable dans l'URL
                 else {
                     stringValue = extractFromUrlPattern(routeInfo.getUrlPattern(), requestedUrl, paramName);
                     if (stringValue != null) {
@@ -347,6 +459,24 @@ public class FrontController extends HttpServlet {
         }
 
         return args;
+    }
+
+    // SPRINT 10: Méthode pour extraire les paramètres texte des données multipart
+    private Map<String, String[]> extractTextParametersFromMultipart(Map<String, Object> multipartData) {
+        Map<String, String[]> textParams = new HashMap<>();
+
+        for (Map.Entry<String, Object> entry : multipartData.entrySet()) {
+            if (entry.getValue() instanceof String) {
+                // C'est un champ texte
+                textParams.put(entry.getKey(), new String[] { (String) entry.getValue() });
+            } else if (entry.getValue() instanceof String[]) {
+                // Tableau de strings
+                textParams.put(entry.getKey(), (String[]) entry.getValue());
+            }
+            // Les fichiers (Map) sont ignorés ici
+        }
+
+        return textParams;
     }
 
     // Analyse les patterns de paramètres pour déterminer si on doit utiliser un
@@ -458,8 +588,18 @@ public class FrontController extends HttpServlet {
             return false;
         }
 
+        // Si c'est un tableau, ce n'est pas un objet complexe
+        if (type.isArray()) {
+            return false;
+        }
+
         // Si c'est un Map, déjà traité séparément
         if (Map.class.isAssignableFrom(type)) {
+            return false;
+        }
+
+        // SPRINT 10: Si c'est annoté avec @UploadedFile, ce n'est pas un objet complexe
+        if (param.isAnnotationPresent(com.monframework.annotation.UploadedFile.class)) {
             return false;
         }
 
@@ -474,6 +614,7 @@ public class FrontController extends HttpServlet {
                 type == Double.class || type == double.class ||
                 type == Boolean.class || type == boolean.class ||
                 type == Float.class || type == float.class ||
+                type == Byte.class || type == byte.class || // Ajoutez cette ligne
                 type.isEnum() ||
                 type.isArray() && isSimpleType(type.getComponentType());
     }
@@ -746,7 +887,9 @@ public class FrontController extends HttpServlet {
                 url.endsWith(".js") ||
                 url.endsWith(".png") ||
                 url.endsWith(".jpg") ||
-                url.equals("/formulaire.html");
+                url.equals("/formulaire.html") ||
+                url.equals("/api-test.html") ||
+                url.equals("/upload-test.html");
     }
 
     private void serveStaticResource(String resourcePath, HttpServletRequest request, HttpServletResponse response)
@@ -814,9 +957,18 @@ public class FrontController extends HttpServlet {
         PrintWriter out = response.getWriter();
         response.setContentType("text/html; charset=UTF-8");
 
-        // ✅ SANS EMOJIS
         System.out.println("Requête " + httpMethod + " reçue: " + requestedUrl);
 
+        Map<String, Object> multipartData = null;
+        if (isMultipartRequest(request)) {
+            try {
+                multipartData = processMultipartData(request);
+                System.out.println("Requête multipart traitée, " + multipartData.size() + " éléments");
+            } catch (Exception e) {
+                System.out.println("Erreur lors du traitement multipart: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
         // Afficher les paramètres
         Map<String, String[]> params = request.getParameterMap();
         if (!params.isEmpty()) {
@@ -837,7 +989,7 @@ public class FrontController extends HttpServlet {
                 System.out.println("Execution: " + method.getDeclaringClass().getSimpleName() + "." + method.getName());
 
                 // Préparer les arguments
-                Object[] args = prepareArguments(routeInfo, requestedUrl, request);
+                Object[] args = prepareArguments(routeInfo, requestedUrl, request, multipartData);
 
                 // Exécuter la méthode
                 Object result = method.invoke(controllerInstance, args);
@@ -979,4 +1131,74 @@ public class FrontController extends HttpServlet {
                 json.substring(0, Math.min(200, json.length())) + "...");
     }
 
+    private boolean isMultipartRequest(HttpServletRequest request) {
+        return request.getContentType() != null
+                && request.getContentType().toLowerCase().startsWith("multipart/form-data");
+    }
+
+    private Map<String, Object> processMultipartData(HttpServletRequest request)
+            throws IOException, ServletException {
+
+        Map<String, Object> multipartData = new HashMap<>();
+
+        // Récupérer toutes les parties
+        Collection<Part> parts = request.getParts();
+
+        for (Part part : parts) {
+            String name = part.getName();
+
+            if (part.getContentType() != null) {
+                // C'est un fichier
+                InputStream is = part.getInputStream();
+                byte[] fileBytes = readAllBytes(is);
+
+                // Stocker les métadonnées du fichier
+                Map<String, Object> fileInfo = new HashMap<>();
+                fileInfo.put("bytes", fileBytes);
+                fileInfo.put("filename", getFileName(part));
+                fileInfo.put("contentType", part.getContentType());
+                fileInfo.put("size", part.getSize());
+
+                multipartData.put(name, fileInfo);
+            } else {
+                // C'est un champ texte
+                String value = readPartAsString(part);
+                multipartData.put(name, value);
+            }
+        }
+
+        return multipartData;
+    }
+
+    private String getFileName(Part part) {
+        String contentDisposition = part.getHeader("content-disposition");
+        String[] items = contentDisposition.split(";");
+        for (String item : items) {
+            if (item.trim().startsWith("filename")) {
+                return item.substring(item.indexOf("=") + 2, item.length() - 1);
+            }
+        }
+        return "";
+    }
+
+    private byte[] readAllBytes(InputStream is) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] data = new byte[4096];
+        int nRead;
+        while ((nRead = is.read(data, 0, data.length)) != -1) {
+            buffer.write(data, 0, nRead);
+        }
+        return buffer.toByteArray();
+    }
+
+    private String readPartAsString(Part part) throws IOException {
+        InputStream is = part.getInputStream();
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int length;
+        while ((length = is.read(buffer)) != -1) {
+            result.write(buffer, 0, length);
+        }
+        return result.toString("UTF-8");
+    }
 }
