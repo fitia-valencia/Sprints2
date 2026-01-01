@@ -10,6 +10,7 @@ C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\Reque
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\RequestParam.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\RestController.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\Route.java
+C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\annotation\UploadedFile.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\ArgumentResolver.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\DemoApplication.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\JsonResponse.java
@@ -22,3 +23,4 @@ C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\scanner\Controll
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\scanner\RouteInfo.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\scanner\RouteScanner.java
 C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\scanner\SimpleRouteScanner.java
+C:\S5\Naina\Sprints(2)\framework\src\main\java\com\monframework\util\FileUploadUtil.java
