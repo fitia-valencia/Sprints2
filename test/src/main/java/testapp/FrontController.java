@@ -5,14 +5,16 @@ import com.monframework.scanner.RouteInfo;
 import com.monframework.ModelView;
 import com.monframework.annotation.PathVariable;
 import com.monframework.annotation.RequestParam;
-
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
+import com.monframework.session.MySession;
 import javax.servlet.ServletException;
-import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
+import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.http.Part;
 
 import java.io.ByteArrayOutputStream;
@@ -238,28 +240,27 @@ public class FrontController extends HttpServlet {
         // Extraire les variables du path
         Map<String, String> pathVariables = routeInfo.extractPathVariablesValues(requestedUrl);
 
-        // SPRINT 10: Gestion des données multipart ou des paramètres normaux
-        Map<String, String[]> requestParams;
+        // sprint11
+        Map<String, String[]> requestParams = multipartData != null
+                ? extractTextParametersFromMultipart(multipartData)
+                : request.getParameterMap();
 
-        if (multipartData != null) {
-            // Si nous avons des données multipart, extraire les paramètres texte
-            requestParams = extractTextParametersFromMultipart(multipartData);
-            System.out.println("  -> Traitement multipart, paramètres texte: " + requestParams.size());
-        } else {
-            // Sinon utiliser les paramètres normaux
-            requestParams = request.getParameterMap();
-        }
-
-        // SPRINT 8bis: Analyse des paramètres pour détecter les patterns
         Map<String, List<String>> paramPatterns = analyzeParameterPatterns(requestParams);
 
         for (int i = 0; i < parameters.length; i++) {
+
             Parameter param = parameters[i];
             String paramName = param.getName();
             Class<?> paramType = param.getType();
 
             System.out.println("DEBUG - Traitement paramètre " + i + ": " + paramName +
                     " (type: " + paramType.getSimpleName() + ")");
+
+            if (paramType == MySession.class) {
+                System.out.println("  -> Injection MySession");
+                args[i] = new MySession(request.getSession());
+                continue;
+            }
 
             // SPRINT 10: Gestion des fichiers uploadés
             if (multipartData != null && param.isAnnotationPresent(com.monframework.annotation.UploadedFile.class)) {
