@@ -7,6 +7,7 @@ com\monframework\annotation\PostMapping.class
 com\monframework\annotation\DeleteMapping.class
 com\monframework\annotation\RequestMapping.class
 com\monframework\ArgumentResolver.class
+com\monframework\session\MySession.class
 com\monframework\scanner\RouteInfo.class
 com\monframework\scanner\AnnotationScanner.class
 com\monframework\scanner\RouteScanner.class

@@ -1,5 +1,6 @@
 testapp\ProductController.class
 testapp\EtudiantController.class
+testapp\TestControllersprint11.class
 testapp\TestErrorController.class
 testapp\DataController.class
 testapp\DemoController.class
