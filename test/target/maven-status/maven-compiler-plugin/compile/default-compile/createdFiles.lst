@@ -4,9 +4,11 @@ testapp\TestControllersprint11.class
 testapp\TestErrorController.class
 testapp\DataController.class
 testapp\DemoController.class
+testapp\SecureController.class
 testapp\Sprint8Controller.class
 testapp\PageController.class
 testapp\models\User.class
+testapp\AuthController.class
 testapp\models\Dept.class
 testapp\ApiController.class
 testapp\FormController.class

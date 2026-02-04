@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Sprint 11-bis - Test Sécurité</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        button { padding: 8px 15px; margin: 5px; cursor: pointer; }
+        .public { background-color: #4CAF50; color: white; }
+        .user { background-color: #2196F3; color: white; }
+        .admin { background-color: #FF9800; color: white; }
+        .logout { background-color: #f44336; color: white; }
+        .response { margin-top: 10px; padding: 10px; background: #f5f5f5; }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+
+<h1>Test Authentification & Rôles</h1>
+
+<div class="test-section">
+    <h2>1. Connexion</h2>
+    <label>Username:</label>
+    <input type="text" id="username" value="user">
+    <label>Password:</label>
+    <input type="password" id="password" value="user123">
+    <button class="public" onclick="login()">Se connecter</button>
+    <button class="logout" onclick="logout()">Se déconnecter</button>
+</div>
+
+<div class="test-section">
+    <h2>2. Routes publiques (sans auth)</h2>
+    <button class="public" onclick="testPublic()">GET /public/info</button>
+</div>
+
+<div class="test-section">
+    <h2>3. Routes authentifiées</h2>
+    <button class="user" onclick="testProfile()">GET /secure/profile</button>
+</div>
+
+<div class="test-section">
+    <h2>4. Routes avec rôles spécifiques</h2>
+    <button class="user" onclick="testUserData()">GET /secure/user-data (role: user)</button>
+    <button class="admin" onclick="testAdminData()">GET /secure/admin-data (role: admin)</button>
+    <button class="admin" onclick="testModerate()">GET /secure/moderate (roles: admin OR moderator)</button>
+    <button class="admin" onclick="testManage()">GET /secure/manage (roles: admin AND manager)</button>
+</div>
+
+<div class="response" id="response">
+    Cliquez sur un bouton pour voir la réponse...
+</div>
+
+<script>
+    function displayResponse(method, url, response, status) {
+        let html = `<strong>${method} ${url} (Status: ${status})</strong><br>`;
+        if (typeof response === 'string') {
+            html += `<pre>${response}</pre>`;
+        } else {
+            html += `<pre>${JSON.stringify(response, null, 2)}</pre>`;
+        }
+        $('#response').html(html);
+    }
+
+    function login() {
+        const data = {
+            username: $('#username').val(),
+            password: $('#password').val()
+        };
+        
+        $.ajax({
+            url: '/testapp/login',
+            type: 'POST',
+            data: data,
+            success: function(response, status, xhr) {
+                displayResponse('POST', '/login', response, xhr.status);
+            },
+            error: function(xhr) {
+                displayResponse('POST', '/login', xhr.responseJSON, xhr.status);
+            }
+        });
+    }
+
+    function logout() {
+        $.ajax({
+            url: '/testapp/logout',
+            type: 'GET',
+            success: function(response, status, xhr) {
+                displayResponse('GET', '/logout', response, xhr.status);
+            }
+        });
+    }
+
+    function testPublic() {
+        $.ajax({
+            url: '/testapp/public/info',
+            type: 'GET',
+            success: function(response, status, xhr) {
+                displayResponse('GET', '/public/info', response, xhr.status);
+            },
+            error: function(xhr) {
+                displayResponse('GET', '/public/info', xhr.responseJSON, xhr.status);
+            }
+        });
+    }
+
+    function testProfile() {
+        $.ajax({
+            url: '/testapp/secure/profile',
+            type: 'GET',
+            success: function(response, status, xhr) {
+                displayResponse('GET', '/secure/profile', response, xhr.status);
+            },
+            error: function(xhr) {
+                displayResponse('GET', '/secure/profile', xhr.responseJSON, xhr.status);
+            }
+        });
+    }
+
+    function testUserData() {
+        $.ajax({
+            url: '/testapp/secure/user-data',
+            type: 'GET',
+            success: function(response, status, xhr) {
+                displayResponse('GET', '/secure/user-data', response, xhr.status);
+            },
+            error: function(xhr) {
+                displayResponse('GET', '/secure/user-data', xhr.responseJSON, xhr.status);
+            }
+        });
+    }
+
+    function testAdminData() {
+        $.ajax({
+            url: '/testapp/secure/admin-data',
+            type: 'GET',
+            success: function(response, status, xhr) {
+                displayResponse('GET', '/secure/admin-data', response, xhr.status);
+            },
+            error: function(xhr) {
+                displayResponse('GET', '/secure/admin-data', xhr.responseJSON, xhr.status);
+            }
+        });
+    }
+
+    function testModerate() {
+        $.ajax({
+            url: '/testapp/secure/moderate',
+            type: 'GET',
+            success: function(response, status, xhr) {
+                displayResponse('GET', '/secure/moderate', response, xhr.status);
+            },
+            error: function(xhr) {
+                displayResponse('GET', '/secure/moderate', xhr.responseJSON, xhr.status);
+            }
+        });
+    }
+
+    function testManage() {
+        $.ajax({
+            url: '/testapp/secure/manage',
+            type: 'GET',
+            success: function(response, status, xhr) {
+                displayResponse('GET', '/secure/manage', response, xhr.status);
+            },
+            error: function(xhr) {
+                displayResponse('GET', '/secure/manage', xhr.responseJSON, xhr.status);
+            }
+        });
+    }
+</script>
+
+</body>
+</html>

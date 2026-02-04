@@ -1,7 +1,6 @@
 package testapp;
 
 import com.monframework.ModelView;
-import com.monframework.ModelView;
 import com.monframework.annotation.Controller;
 import com.monframework.annotation.GetMapping;
 
