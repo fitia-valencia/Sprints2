@@ -2,19 +2,21 @@ package testapp;
 
 import com.monframework.scanner.ControllerScanner;
 import com.monframework.scanner.RouteInfo;
+import com.monframework.security.SecurityCheckResult;
+import com.monframework.security.SecurityConfig;
 import com.monframework.ModelView;
 import com.monframework.annotation.PathVariable;
 import com.monframework.annotation.RequestParam;
 import com.monframework.session.MySession;
+
 import javax.servlet.ServletException;
+import javax.servlet.ServletContext;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
-
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
-import javax.servlet.annotation.MultipartConfig;
 import javax.servlet.http.Part;
 
 import java.io.ByteArrayOutputStream;
@@ -31,23 +33,22 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.monframework.annotation.AllowAnonymous;
+import com.monframework.annotation.Authenticated;
 import com.monframework.annotation.JsonAPI;
 import com.monframework.annotation.RestController;
+import com.monframework.annotation.Role;
+import com.monframework.annotation.Roles;
+import com.monframework.JsonResponse;
 import com.monframework.JsonUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import javax.servlet.annotation.MultipartConfig;
-import javax.servlet.http.Part;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collection;
-
-@MultipartConfig(location = "/tmp", maxFileSize = 10 * 1024 * 1024, // 10MB
-        maxRequestSize = 50 * 1024 * 1024, // 50MB
-        fileSizeThreshold = 1024 * 1024 // 1MB
+@MultipartConfig(
+    location = "C:/temp", // Utilisez un répertoire existant
+    maxFileSize = 10 * 1024 * 1024, // 10MB
+    maxRequestSize = 50 * 1024 * 1024, // 50MB
+    fileSizeThreshold = 1024 * 1024 // 1MB
 )
-
 public class FrontController extends HttpServlet {
 
     private ControllerScanner scanner;
@@ -58,6 +59,22 @@ public class FrontController extends HttpServlet {
 
         scanner = new ControllerScanner();
         scanner.scanControllers("testapp");
+
+        // Lire la configuration de sécurité
+        String userKey = getServletContext().getInitParameter("security.session.userKey");
+        if (userKey != null) {
+            SecurityConfig.setSessionUserKey(userKey);
+        }
+
+        String rolesKey = getServletContext().getInitParameter("security.session.rolesKey");
+        if (rolesKey != null) {
+            SecurityConfig.setSessionRolesKey(rolesKey);
+        }
+
+        String authKey = getServletContext().getInitParameter("security.session.authKey");
+        if (authKey != null) {
+            SecurityConfig.setSessionAuthKey(authKey);
+        }
 
         // Stocker le scanner dans le contexte servlet
         getServletContext().setAttribute("routeScanner", scanner);
@@ -98,6 +115,7 @@ public class FrontController extends HttpServlet {
             serveStaticResource(requestedUrl, request, response);
             return;
         }
+        
         PrintWriter out = response.getWriter();
         response.setContentType("text/html; charset=UTF-8");
 
@@ -115,13 +133,20 @@ public class FrontController extends HttpServlet {
 
         if (routeInfo != null) {
             try {
+                // Vérification de sécurité AVANT exécution
+                SecurityCheckResult securityCheck = checkSecurity(routeInfo.getMethod(), request);
+                if (!securityCheck.isAllowed()) {
+                    handleAccessDenied(securityCheck, out, response);
+                    return;
+                }
+
                 Method method = routeInfo.getMethod();
                 Object controllerInstance = method.getDeclaringClass().newInstance();
 
                 System.out.println("Exécution: " + method.getDeclaringClass().getSimpleName() + "." + method.getName());
 
                 // Préparer les arguments pour la méthode
-                Object[] args = prepareArguments(routeInfo, requestedUrl, request, null);
+                Object[] args = prepareArguments(routeInfo, requestedUrl, request, response, null);
 
                 // Exécuter la méthode avec les arguments
                 Object result = method.invoke(controllerInstance, args);
@@ -136,10 +161,12 @@ public class FrontController extends HttpServlet {
             } catch (Exception e) {
                 System.out.println("ERREUR: " + e.getMessage());
                 e.printStackTrace();
+                response.setStatus(500);
                 out.println("<h1>Erreur d'exécution</h1><pre>" + e.getMessage() + "</pre>");
             }
         } else {
             System.out.println("URL non trouvée: " + requestedUrl);
+            response.setStatus(404);
             out.println("<h1>404 - URL non trouvée</h1>");
             out.println("<p>Aucune route trouvée pour: " + requestedUrl + "</p>");
         }
@@ -231,7 +258,7 @@ public class FrontController extends HttpServlet {
     }
 
     private Object[] prepareArguments(RouteInfo routeInfo, String requestedUrl,
-            HttpServletRequest request,
+            HttpServletRequest request, HttpServletResponse response,
             Map<String, Object> multipartData) {
 
         Parameter[] parameters = routeInfo.getParameters();
@@ -240,15 +267,22 @@ public class FrontController extends HttpServlet {
         // Extraire les variables du path
         Map<String, String> pathVariables = routeInfo.extractPathVariablesValues(requestedUrl);
 
-        // sprint11
-        Map<String, String[]> requestParams = multipartData != null
-                ? extractTextParametersFromMultipart(multipartData)
-                : request.getParameterMap();
+        // SPRINT 10: Gestion des données multipart ou des paramètres normaux
+        Map<String, String[]> requestParams;
 
+        if (multipartData != null) {
+            // Si nous avons des données multipart, extraire les paramètres texte
+            requestParams = extractTextParametersFromMultipart(multipartData);
+            System.out.println("  -> Traitement multipart, paramètres texte: " + requestParams.size());
+        } else {
+            // Sinon utiliser les paramètres normaux
+            requestParams = request.getParameterMap();
+        }
+
+        // SPRINT 8bis: Analyse des paramètres pour détecter les patterns
         Map<String, List<String>> paramPatterns = analyzeParameterPatterns(requestParams);
 
         for (int i = 0; i < parameters.length; i++) {
-
             Parameter param = parameters[i];
             String paramName = param.getName();
             Class<?> paramType = param.getType();
@@ -256,6 +290,50 @@ public class FrontController extends HttpServlet {
             System.out.println("DEBUG - Traitement paramètre " + i + ": " + paramName +
                     " (type: " + paramType.getSimpleName() + ")");
 
+            // ====== INJECTION AUTOMATIQUE DES OBJETS SERVLET ======
+            // Gestion spéciale pour HttpServletRequest
+            if (paramType == HttpServletRequest.class) {
+                args[i] = request;
+                System.out.println("  -> Injection automatique HttpServletRequest");
+                continue;
+            }
+
+            // Gestion spéciale pour HttpServletResponse
+            if (paramType == HttpServletResponse.class) {
+                args[i] = response;
+                System.out.println("  -> Injection automatique HttpServletResponse");
+                continue;
+            }
+
+            // Gestion spéciale pour HttpSession
+            if (paramType == HttpSession.class) {
+                args[i] = request.getSession();
+                System.out.println("  -> Injection automatique HttpSession");
+                continue;
+            }
+
+            // Gestion spéciale pour ServletContext
+            if (paramType == ServletContext.class) {
+                args[i] = getServletContext();
+                System.out.println("  -> Injection automatique ServletContext");
+                continue;
+            }
+
+            // Gestion spéciale pour PrintWriter
+            if (paramType == PrintWriter.class) {
+                try {
+                    args[i] = response.getWriter();
+                    System.out.println("  -> Injection automatique PrintWriter");
+                    continue;
+                } catch (IOException e) {
+                    System.out.println("  -> Erreur injection PrintWriter: " + e.getMessage());
+                    args[i] = null;
+                    continue;
+                }
+            }
+            // ====== FIN INJECTION AUTOMATIQUE ======
+
+            // SPRINT 11: Injection MySession
             if (paramType == MySession.class) {
                 System.out.println("  -> Injection MySession");
                 args[i] = new MySession(request.getSession());
@@ -480,8 +558,7 @@ public class FrontController extends HttpServlet {
         return textParams;
     }
 
-    // Analyse les patterns de paramètres pour déterminer si on doit utiliser un
-    // préfixe
+    // Analyse les patterns de paramètres pour déterminer si on doit utiliser un préfixe
     private Map<String, List<String>> analyzeParameterPatterns(Map<String, String[]> requestParams) {
         Map<String, List<String>> patterns = new HashMap<>();
 
@@ -489,7 +566,7 @@ public class FrontController extends HttpServlet {
             if (paramName.contains(".")) {
                 String prefix = paramName.substring(0, paramName.indexOf('.'));
                 if (!patterns.containsKey(prefix)) {
-                    patterns.put(prefix, new java.util.ArrayList<>());
+                    patterns.put(prefix, new ArrayList<>());
                 }
                 patterns.get(prefix).add(paramName);
             }
@@ -577,10 +654,20 @@ public class FrontController extends HttpServlet {
     }
 
     private boolean isComplexObject(Parameter param, Class<?> type) {
-        // Si c'est annoté avec @RequestParam ou @PathVariable, ce n'est pas un objet
-        // complexe
+        // Si c'est annoté avec @RequestParam, @PathVariable ou @UploadedFile, ce n'est pas un objet complexe
         if (param.isAnnotationPresent(PathVariable.class) ||
-                param.isAnnotationPresent(RequestParam.class)) {
+                param.isAnnotationPresent(RequestParam.class) ||
+                param.isAnnotationPresent(com.monframework.annotation.UploadedFile.class)) {
+            return false;
+        }
+
+        // Si c'est un type Servlet, ce n'est pas un objet complexe
+        if (type == HttpServletRequest.class ||
+                type == HttpServletResponse.class ||
+                type == HttpSession.class ||
+                type == ServletContext.class ||
+                type == PrintWriter.class ||
+                type == MySession.class) {
             return false;
         }
 
@@ -599,11 +686,6 @@ public class FrontController extends HttpServlet {
             return false;
         }
 
-        // SPRINT 10: Si c'est annoté avec @UploadedFile, ce n'est pas un objet complexe
-        if (param.isAnnotationPresent(com.monframework.annotation.UploadedFile.class)) {
-            return false;
-        }
-
         // Sinon, c'est un objet complexe
         return true;
     }
@@ -615,13 +697,12 @@ public class FrontController extends HttpServlet {
                 type == Double.class || type == double.class ||
                 type == Boolean.class || type == boolean.class ||
                 type == Float.class || type == float.class ||
-                type == Byte.class || type == byte.class || // Ajoutez cette ligne
+                type == Byte.class || type == byte.class ||
                 type.isEnum() ||
                 type.isArray() && isSimpleType(type.getComponentType());
     }
 
-    // Méthode pour setter une propriété sur un objet (avec support pour les
-    // propriétés imbriquées)
+    // Méthode pour setter une propriété sur un objet (avec support pour les propriétés imbriquées)
     private void setPropertyOnObject(Object obj, String propertyPath, String[] values) {
         try {
             // Si le chemin contient un point, c'est une propriété imbriquée
@@ -883,14 +964,17 @@ public class FrontController extends HttpServlet {
     }
 
     private boolean isStaticResource(String url) {
-        return url.endsWith(".html") ||
-                url.endsWith(".css") ||
-                url.endsWith(".js") ||
-                url.endsWith(".png") ||
-                url.endsWith(".jpg") ||
-                url.equals("/formulaire.html") ||
-                url.equals("/api-test.html") ||
-                url.equals("/upload-test.html");
+        return url.equals("/") ||
+               url.equals("/index.html") ||
+               url.endsWith(".html") ||
+               url.endsWith(".css") ||
+               url.endsWith(".js") ||
+               url.endsWith(".png") ||
+               url.endsWith(".jpg") ||
+               url.equals("/formulaire.html") ||
+               url.equals("/api-test.html") ||
+               url.equals("/upload-test.html") ||
+               url.equals("/security-test.html");
     }
 
     private void serveStaticResource(String resourcePath, HttpServletRequest request, HttpServletResponse response)
@@ -898,8 +982,59 @@ public class FrontController extends HttpServlet {
 
         System.out.println("Ressource statique: " + resourcePath);
 
+        // Si c'est la racine, servir une page d'accueil
+        if (resourcePath.equals("/") || resourcePath.equals("/index.html")) {
+            serveHomePage(request, response);
+            return;
+        }
+
         // Déléguer au servlet par défaut de Tomcat
         getServletContext().getNamedDispatcher("default").forward(request, response);
+    }
+
+    private void serveHomePage(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        
+        response.setContentType("text/html; charset=UTF-8");
+        PrintWriter out = response.getWriter();
+        
+        out.println("<!DOCTYPE html>");
+        out.println("<html>");
+        out.println("<head>");
+        out.println("<title>Accueil - Framework MVC</title>");
+        out.println("<style>");
+        out.println("body { font-family: Arial, sans-serif; margin: 40px; }");
+        out.println("h1 { color: #333; }");
+        out.println(".menu { margin: 20px 0; }");
+        out.println(".menu a { display: inline-block; padding: 10px 20px; margin: 5px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; }");
+        out.println(".menu a:hover { background: #45a049; }");
+        out.println(".api-list { background: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 20px; }");
+        out.println("</style>");
+        out.println("</head>");
+        out.println("<body>");
+        out.println("<h1>Framework MVC - Page d'accueil</h1>");
+        out.println("<p>Framework développé pour le cours de Java EE</p>");
+        
+        out.println("<div class='menu'>");
+        out.println("<h2>Navigation :</h2>");
+        out.println("<a href='/testapp/upload-test.html'>Test Upload (Sprint 10)</a>");
+        out.println("<a href='/testapp/security-test.html'>Test Sécurité (Sprint 11-bis)</a>");
+        out.println("<a href='/testapp/api-test.html'>Test API REST (Sprint 9)</a>");
+        out.println("<a href='/testapp/login'>Connexion</a>");
+        out.println("</div>");
+        
+        out.println("<div class='api-list'>");
+        out.println("<h3>API Endpoints :</h3>");
+        out.println("<ul>");
+        out.println("<li><a href='/testapp/api/hello'>/api/hello</a> - Hello API</li>");
+        out.println("<li><a href='/testapp/api/employees'>/api/employees</a> - Liste employés</li>");
+        out.println("<li><a href='/testapp/api/status'>/api/status</a> - Status API</li>");
+        out.println("<li><a href='/testapp/secure/profile'>/secure/profile</a> - Profil (authentifié)</li>");
+        out.println("</ul>");
+        out.println("</div>");
+        
+        out.println("</body>");
+        out.println("</html>");
     }
 
     private void handleMethodResult(Object result, PrintWriter out, Method method,
@@ -955,8 +1090,27 @@ public class FrontController extends HttpServlet {
             throws ServletException, IOException {
 
         String requestedUrl = request.getRequestURI().substring(request.getContextPath().length());
+        
+        // Gérer la racine
+        if (requestedUrl.equals("/") || requestedUrl.equals("")) {
+            serveHomePage(request, response);
+            return;
+        }
+        
         PrintWriter out = response.getWriter();
         response.setContentType("text/html; charset=UTF-8");
+
+        // Trouver la route
+        RouteInfo routeInfo = scanner.findMatchingRoute(requestedUrl, httpMethod);
+
+        if (routeInfo != null) {
+            // Vérifier les permissions
+            SecurityCheckResult securityCheck = checkSecurity(routeInfo.getMethod(), request);
+            if (!securityCheck.isAllowed()) {
+                handleAccessDenied(securityCheck, out, response);
+                return;
+            }
+        }
 
         System.out.println("Requête " + httpMethod + " reçue: " + requestedUrl);
 
@@ -970,6 +1124,7 @@ public class FrontController extends HttpServlet {
                 e.printStackTrace();
             }
         }
+        
         // Afficher les paramètres
         Map<String, String[]> params = request.getParameterMap();
         if (!params.isEmpty()) {
@@ -979,9 +1134,6 @@ public class FrontController extends HttpServlet {
             }
         }
 
-        // Trouver la route avec la méthode HTTP
-        RouteInfo routeInfo = scanner.findMatchingRoute(requestedUrl, httpMethod);
-
         if (routeInfo != null) {
             try {
                 Method method = routeInfo.getMethod();
@@ -990,7 +1142,7 @@ public class FrontController extends HttpServlet {
                 System.out.println("Execution: " + method.getDeclaringClass().getSimpleName() + "." + method.getName());
 
                 // Préparer les arguments
-                Object[] args = prepareArguments(routeInfo, requestedUrl, request, multipartData);
+                Object[] args = prepareArguments(routeInfo, requestedUrl, request, response, multipartData);
 
                 // Exécuter la méthode
                 Object result = method.invoke(controllerInstance, args);
@@ -1005,13 +1157,167 @@ public class FrontController extends HttpServlet {
             } catch (Exception e) {
                 System.out.println("ERREUR: " + e.getMessage());
                 e.printStackTrace();
+                response.setStatus(500);
                 out.println("<h1>Erreur d'exécution</h1><pre>" + e.getMessage() + "</pre>");
             }
         } else {
             System.out.println("Route non trouvée: " + httpMethod + " " + requestedUrl);
+            response.setStatus(404);
             out.println("<h1>404 - Route non trouvée</h1>");
             out.println("<p>Aucune route trouvée pour: " + httpMethod + " " + requestedUrl + "</p>");
             displayAvailableRoutes(out, httpMethod, requestedUrl);
+        }
+    }
+
+    // Nouvelle méthode pour vérifier la sécurité
+    private SecurityCheckResult checkSecurity(Method method, HttpServletRequest request) {
+        SecurityCheckResult result = new SecurityCheckResult();
+
+        // Vérifier d'abord si la méthode est marquée comme anonyme
+        if (method.isAnnotationPresent(AllowAnonymous.class) ||
+                method.getDeclaringClass().isAnnotationPresent(AllowAnonymous.class)) {
+            result.setAllowed(true);
+            return result;
+        }
+
+        // Vérifier si l'authentification est requise
+        boolean requiresAuth = method.isAnnotationPresent(Authenticated.class) ||
+                method.getDeclaringClass().isAnnotationPresent(Authenticated.class);
+
+        // Par défaut, si pas d'annotation, pas de restriction
+        if (!requiresAuth &&
+                !method.isAnnotationPresent(Role.class) &&
+                !method.isAnnotationPresent(Roles.class) &&
+                !method.getDeclaringClass().isAnnotationPresent(Role.class) &&
+                !method.getDeclaringClass().isAnnotationPresent(Roles.class)) {
+            result.setAllowed(true);
+            return result;
+        }
+
+        // Vérifier l'authentification
+        HttpSession session = request.getSession(false);
+        boolean isAuthenticated = false;
+
+        if (session != null) {
+            Object authFlag = session.getAttribute(SecurityConfig.getSessionAuthKey());
+            isAuthenticated = authFlag != null && Boolean.TRUE.equals(authFlag);
+        }
+
+        if (requiresAuth && !isAuthenticated) {
+            result.setAllowed(false);
+            result.setErrorCode(401);
+            result.setErrorMessage("Authentification requise");
+            return result;
+        }
+
+        // Vérifier les rôles si l'utilisateur est authentifié
+        if (isAuthenticated) {
+            // Récupérer les rôles de l'utilisateur
+            List<String> userRoles = getUserRoles(session);
+
+            // Vérifier les annotations @Role
+            Role roleAnnotation = method.getAnnotation(Role.class);
+            if (roleAnnotation == null) {
+                roleAnnotation = method.getDeclaringClass().getAnnotation(Role.class);
+            }
+
+            if (roleAnnotation != null) {
+                String requiredRole = roleAnnotation.value();
+                if (!userRoles.contains(requiredRole)) {
+                    result.setAllowed(false);
+                    result.setErrorCode(403);
+                    result.setErrorMessage("Rôle requis: " + requiredRole);
+                    return result;
+                }
+            }
+
+            // Vérifier les annotations @Roles
+            Roles rolesAnnotation = method.getAnnotation(Roles.class);
+            if (rolesAnnotation == null) {
+                rolesAnnotation = method.getDeclaringClass().getAnnotation(Roles.class);
+            }
+
+            if (rolesAnnotation != null) {
+                String[] requiredRoles = rolesAnnotation.value();
+                boolean hasRequiredRole = false;
+
+                if (rolesAnnotation.requireAll()) {
+                    // Nécessite TOUS les rôles
+                    hasRequiredRole = true;
+                    for (String role : requiredRoles) {
+                        if (!userRoles.contains(role)) {
+                            hasRequiredRole = false;
+                            break;
+                        }
+                    }
+                } else {
+                    // Nécessite au moins UN rôle
+                    for (String role : requiredRoles) {
+                        if (userRoles.contains(role)) {
+                            hasRequiredRole = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!hasRequiredRole) {
+                    result.setAllowed(false);
+                    result.setErrorCode(403);
+                    result.setErrorMessage("Rôles requis: " + Arrays.toString(requiredRoles));
+                    return result;
+                }
+            }
+        }
+
+        result.setAllowed(true);
+        return result;
+    }
+
+    // Méthode pour récupérer les rôles de l'utilisateur
+    private List<String> getUserRoles(HttpSession session) {
+        List<String> roles = new ArrayList<>();
+
+        if (session != null) {
+            Object rolesObj = session.getAttribute(SecurityConfig.getSessionRolesKey());
+
+            if (rolesObj instanceof List) {
+                for (Object role : (List<?>) rolesObj) {
+                    if (role instanceof String) {
+                        roles.add((String) role);
+                    }
+                }
+            } else if (rolesObj instanceof String[]) {
+                roles.addAll(Arrays.asList((String[]) rolesObj));
+            } else if (rolesObj instanceof String) {
+                roles.add((String) rolesObj);
+            }
+        }
+
+        return roles;
+    }
+
+    // Méthode pour gérer l'accès refusé
+    private void handleAccessDenied(SecurityCheckResult securityCheck,
+            PrintWriter out, HttpServletResponse response) {
+
+        response.setStatus(securityCheck.getErrorCode());
+
+        // Si c'est une API REST, retourner du JSON
+        if (securityCheck.getErrorCode() == 401 || securityCheck.getErrorCode() == 403) {
+            response.setContentType("application/json; charset=UTF-8");
+
+            JsonResponse jsonResponse = JsonResponse.error(
+                    securityCheck.getErrorCode(),
+                    securityCheck.getErrorMessage());
+
+            String json = JsonUtil.toJson(jsonResponse);
+            out.write(json);
+        } else {
+            // Sinon, page HTML d'erreur
+            out.println("<html><head><title>Accès refusé</title></head><body>");
+            out.println("<h1>Accès refusé</h1>");
+            out.println("<p>" + securityCheck.getErrorMessage() + "</p>");
+            out.println("</body></html>");
         }
     }
 
@@ -1071,8 +1377,7 @@ public class FrontController extends HttpServlet {
             statusCode = jsonResponse.getCode();
         }
 
-        // 2. L'annotation @JsonAPI peut écraser le code si elle spécifie explicitement
-        // un code
+        // 2. L'annotation @JsonAPI peut écraser le code si elle spécifie explicitement un code
         if (jsonAnnotation != null) {
             // Si l'annotation a un code différent de 200, l'utiliser
             if (jsonAnnotation.statusCode() != 200) {
@@ -1140,32 +1445,45 @@ public class FrontController extends HttpServlet {
     private Map<String, Object> processMultipartData(HttpServletRequest request)
             throws IOException, ServletException {
 
+        System.out.println("DEBUG - Début du traitement multipart");
         Map<String, Object> multipartData = new HashMap<>();
 
-        // Récupérer toutes les parties
-        Collection<Part> parts = request.getParts();
+        try {
+            // Récupérer toutes les parties
+            Collection<Part> parts = request.getParts();
+            System.out.println("DEBUG - Nombre de parts: " + parts.size());
 
-        for (Part part : parts) {
-            String name = part.getName();
+            for (Part part : parts) {
+                String name = part.getName();
+                System.out.println("DEBUG - Part name: " + name + ", size: " + part.getSize() +
+                                 ", contentType: " + part.getContentType());
 
-            if (part.getContentType() != null) {
-                // C'est un fichier
-                InputStream is = part.getInputStream();
-                byte[] fileBytes = readAllBytes(is);
+                if (part.getContentType() != null && part.getSize() > 0) {
+                    // C'est un fichier
+                    InputStream is = part.getInputStream();
+                    byte[] fileBytes = readAllBytes(is);
 
-                // Stocker les métadonnées du fichier
-                Map<String, Object> fileInfo = new HashMap<>();
-                fileInfo.put("bytes", fileBytes);
-                fileInfo.put("filename", getFileName(part));
-                fileInfo.put("contentType", part.getContentType());
-                fileInfo.put("size", part.getSize());
+                    // Stocker les métadonnées du fichier
+                    Map<String, Object> fileInfo = new HashMap<>();
+                    fileInfo.put("bytes", fileBytes);
+                    fileInfo.put("filename", getFileName(part));
+                    fileInfo.put("contentType", part.getContentType());
+                    fileInfo.put("size", part.getSize());
 
-                multipartData.put(name, fileInfo);
-            } else {
-                // C'est un champ texte
-                String value = readPartAsString(part);
-                multipartData.put(name, value);
+                    multipartData.put(name, fileInfo);
+                    
+                    System.out.println("  -> Fichier multipart: " + name + " (" +
+                            getFileName(part) + ", " + fileBytes.length + " bytes)");
+                } else if (part.getSize() > 0) {
+                    // C'est un champ texte
+                    String value = readPartAsString(part);
+                    multipartData.put(name, value);
+                    System.out.println("  -> Champ texte multipart: " + name + " = " + value);
+                }
             }
+        } catch (Exception e) {
+            System.out.println("DEBUG - Erreur dans processMultipartData: " + e.getMessage());
+            e.printStackTrace();
         }
 
         return multipartData;
@@ -1173,13 +1491,16 @@ public class FrontController extends HttpServlet {
 
     private String getFileName(Part part) {
         String contentDisposition = part.getHeader("content-disposition");
-        String[] items = contentDisposition.split(";");
-        for (String item : items) {
-            if (item.trim().startsWith("filename")) {
-                return item.substring(item.indexOf("=") + 2, item.length() - 1);
+        if (contentDisposition != null) {
+            String[] items = contentDisposition.split(";");
+            for (String item : items) {
+                if (item.trim().startsWith("filename")) {
+                    String fileName = item.substring(item.indexOf("=") + 2, item.length() - 1);
+                    return fileName.isEmpty() ? "uploaded_file" : fileName;
+                }
             }
         }
-        return "";
+        return "uploaded_file";
     }
 
     private byte[] readAllBytes(InputStream is) throws IOException {

@@ -5,4 +5,7 @@ cd ../test
 mvn clean package
 copy target\testapp.war C:\xampp\tomcat\webapps
 
-pour tester: démarrer tomcat, localhost:8085
+pour tester: 
+-démarrer tomcat:
+C:\xampp\tomcat\bin
+-navigateur: localhost:8085
